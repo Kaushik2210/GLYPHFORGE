@@ -30,8 +30,15 @@ const EPSILON = 1e-6
  * analogue of the dual-cell "degenerate case" in PLAN §4.4. Without this, large flat
  * regions (skies, walls, a bright circle) render as a near-random texture of glyphs
  * instead of a clean tone gradient.
+ *
+ * Measured against synthetic gradient tiles: a very gentle photographic gradient
+ * (ΔL~0.03 across a cell) already produced confidence 0.37 at the original 0.025
+ * threshold — enough structure weight to flip glyph *shape* between adjacent,
+ * similarly-toned rows, which reads as banding/noise even though each row's tone choice
+ * is individually correct. Raised so gentle gradients land near confidence 0 (pure tone,
+ * a clean visual ramp) while real edges/texture (std well above 0.1) still engage fully.
  */
-const FLAT_TILE_STD_THRESHOLD = 0.025
+const FLAT_TILE_STD_THRESHOLD = 0.09
 
 function clamp01(v: number): number {
   return v < 0 ? 0 : v > 1 ? 1 : v

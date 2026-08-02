@@ -90,7 +90,11 @@ body,
 }
 
 canvas {
-  image-rendering: pixelated;
+  /* `pixelated` (nearest-neighbor) looks great when the canvas is upscaled, but this
+   * canvas is usually LARGER than the viewport (cols*CELL_W can be 1000px+), so the
+   * common case is the browser downscaling it — nearest-neighbor downscaling drops
+   * whole rows/columns of glyphs rather than blending them, which reads as moiré/noise.
+   * Smooth (browser default) scaling handles both directions reasonably. */
   max-width: 100%;
   max-height: 100%;
 }
