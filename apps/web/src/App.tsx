@@ -8,6 +8,7 @@ import {
   oklabToLinear,
   solveDualCell,
   dualCellMaskAsTile,
+  gaussianBlur,
   differenceOfGaussians,
   sobel,
   computeCellEdge,
@@ -54,9 +55,13 @@ const IMAGE_WEIGHTS: MatchWeights = { wStruct: 0.7, wTone: 1.0, wEdge: 0, wTemp:
 const DUAL_CELL_WEIGHTS: MatchWeights = { wStruct: 1.0, wTone: 0.3, wEdge: 0, wTemp: 0, wPrior: 0 }
 
 /** Oklab distance between a cell's two color clusters. Below this the cell reads as one
- * flat color (PLAN §4.4 degenerate case) and falls back to single-tone matching. Range
- * 0-1ish in practice; 0.06 is a soft boundary — much less than a real hard edge (~0.3+). */
-const DUAL_CELL_SEPARATION_THRESHOLD = 0.06
+ * flat color (PLAN §4.4 degenerate case) and falls back to single-tone matching.
+ * 2-means always finds *some* split, even in a perfectly smooth gradient — measured
+ * separation for a gentle photographic gradient runs ~0.01-0.03, a steep one ~0.07-0.15,
+ * and a real hard edge ~0.15-0.5+. Too low a threshold (0.06 originally) treats smooth
+ * gradient/sensor-noise cells as hard edges, rendering them as speckled noise instead of
+ * a clean tone falloff — this is what "the image quality is bad" turned out to be. */
+const DUAL_CELL_SEPARATION_THRESHOLD = 0.18
 
 /** Gaussian sigma (in source pixels) for the DoG edge pass — PLAN §5.1. */
 const EDGE_SIGMA = 1.0
@@ -147,20 +152,39 @@ function imageToGlyphField(
   if (!ctx) throw new Error('2D context unavailable')
   ctx.drawImage(img, 0, 0, srcW, srcH)
   const rgba = ctx.getImageData(0, 0, srcW, srcH).data
+  const pixelCount = srcW * srcH
+
+  // Denoise before matching: browsers dither gradients (ordered dither, not random) to
+  // avoid banding, and real photos carry sensor/JPEG noise. Left alone, that noise has
+  // enough local contrast to look like "structure" to the matcher — a smooth sky renders
+  // as a repeating moiré of unrelated glyphs instead of a clean tone falloff. A small
+  // blur kills it while leaving real edges (which have energy at a much larger scale)
+  // intact. Spatial analogue of the temporal-noise-filtering technique in PLAN §9.2.
+  const rRaw = new Float32Array(pixelCount)
+  const gRaw = new Float32Array(pixelCount)
+  const bRaw = new Float32Array(pixelCount)
+  for (let p = 0; p < pixelCount; p++) {
+    const idx = p * 4
+    rRaw[p] = srgbToLinear((rgba[idx] ?? 0) / 255)
+    gRaw[p] = srgbToLinear((rgba[idx + 1] ?? 0) / 255)
+    bRaw[p] = srgbToLinear((rgba[idx + 2] ?? 0) / 255)
+  }
+  // Wide enough to average out an 8x8 ordered-dither (Bayer) tile — browsers commonly
+  // use that block size for gradient dithering, which happens to match CELL_W and was
+  // aliasing into a period-8 repeating pattern per cell before this was widened.
+  const DENOISE_SIGMA = 2.5
+  const rBuf = gaussianBlur({ width: srcW, height: srcH, data: rRaw }, DENOISE_SIGMA).data
+  const gBuf = gaussianBlur({ width: srcW, height: srcH, data: gRaw }, DENOISE_SIGMA).data
+  const bBuf = gaussianBlur({ width: srcW, height: srcH, data: bRaw }, DENOISE_SIGMA).data
 
   // Auto-contrast: most photos don't use the full [0,1] luminance range, which collapses
   // many cells onto near-identical glyphs. Stretch luminance to full range before it drives
-  // glyph selection — displayed color (fg, below) stays true to the source, unstretched.
-  const pixelCount = srcW * srcH
+  // glyph selection — displayed color (fg, below) stays true to the source.
   let lumaMin = Infinity
   let lumaMax = -Infinity
   const lumaBuf = new Float32Array(pixelCount)
   for (let p = 0; p < pixelCount; p++) {
-    const idx = p * 4
-    const r = srgbToLinear((rgba[idx] ?? 0) / 255)
-    const g = srgbToLinear((rgba[idx + 1] ?? 0) / 255)
-    const b = srgbToLinear((rgba[idx + 2] ?? 0) / 255)
-    const luma = linearLuma(r, g, b)
+    const luma = linearLuma(rBuf[p] ?? 0, gBuf[p] ?? 0, bBuf[p] ?? 0)
     lumaBuf[p] = luma
     if (luma < lumaMin) lumaMin = luma
     if (luma > lumaMax) lumaMax = luma
@@ -193,10 +217,9 @@ function imageToGlyphField(
         for (let px = 0; px < CELL_W; px++) {
           const srcX = cx * CELL_W + px
           const p = srcY * srcW + srcX
-          const idx = p * 4
-          const r = srgbToLinear((rgba[idx] ?? 0) / 255)
-          const g = srgbToLinear((rgba[idx + 1] ?? 0) / 255)
-          const b = srgbToLinear((rgba[idx + 2] ?? 0) / 255)
+          const r = rBuf[p] ?? 0
+          const g = gBuf[p] ?? 0
+          const b = bBuf[p] ?? 0
           sumR += r
           sumG += g
           sumB += b
