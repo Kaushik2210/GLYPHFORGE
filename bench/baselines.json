@@ -1,0 +1,4 @@
+{
+  "_comment": "Fidelity baselines per PLAN.md §11.1 / CLAUDE.md. Empty until Phase 2 lands the matcher and glyphify pipeline — populate per-fixture SSIM/gradient-SSIM/temporal-SSIM here as phases ship.",
+  "fixtures": {}
+}
