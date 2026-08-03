@@ -36,7 +36,11 @@ import type { CapabilityTier } from '@glyphforge/gpu'
 
 const CELL_W = 8
 const CELL_H = 14
-const COLS = 140
+// 140 read as too low-resolution/blocky to be recognizable. Node-profiled (bypassing
+// browser tab-throttling noise): 220x~125 cells costs ~2.5-3s total (denoise blur +
+// DoG/Sobel + per-cell dual-cell/match/edge), a reasonable one-time wait for a clear
+// resolution jump.
+const COLS = 220
 const FONT_FAMILY = 'ui-monospace, "JetBrains Mono", "IBM Plex Mono", monospace'
 // ascii-full (95 glyphs) rather than ascii-safe: more shapes to match against, and it
 // already contains the four directional glyphs the edge pass overrides onto (- | / \).
@@ -49,7 +53,7 @@ const CHARSET_ID = 'ascii-full'
  * Used as the fallback path when a cell's dual-cell separation is too low (PLAN §4.4
  * degenerate case).
  */
-const IMAGE_WEIGHTS: MatchWeights = { wStruct: 0.7, wTone: 1.0, wEdge: 0, wTemp: 0, wPrior: 0 }
+const IMAGE_WEIGHTS: MatchWeights = { wStruct: 0.45, wTone: 1.0, wEdge: 0, wTemp: 0, wPrior: 0 }
 
 /** The dual-cell mask is a clean binary shape (PLAN §4.4) — match it structure-first. */
 const DUAL_CELL_WEIGHTS: MatchWeights = { wStruct: 1.0, wTone: 0.3, wEdge: 0, wTemp: 0, wPrior: 0 }
