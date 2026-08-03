@@ -1,6 +1,21 @@
 :root {
   color-scheme: dark;
   font-family: 'JetBrains Mono', 'IBM Plex Mono', ui-monospace, monospace;
+
+  --bg: #0a0a0a;
+  --surface: #111113;
+  --border: #2a2a2e;
+  --border-hover: #45454b;
+  --text: #e8e8ea;
+  --muted: #93939c;
+  --accent: #5b8cff;
+  --accent-text: #0a0a0a;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
 }
 
 html,
@@ -8,85 +23,163 @@ body,
 #root {
   margin: 0;
   height: 100%;
-  background: #0a0a0a;
-  color: #e5e5e5;
+  background: var(--bg);
+  color: var(--text);
 }
 
 .app {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  height: 100dvh;
+  width: 100%;
 }
 
+/* ---------- header ---------- */
+
 .app__header {
-  padding: 0.75rem 1rem;
-  border-bottom: 1px solid #262626;
   display: flex;
-  align-items: baseline;
-  gap: 0.75rem;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1.25rem;
+  padding: 0.75rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.app__brand {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
 }
 
 .app__title {
   font-weight: 700;
+  font-size: 0.95rem;
   letter-spacing: 0.08em;
 }
 
 .app__tier {
-  font-size: 0.75rem;
-  padding: 0.15rem 0.5rem;
+  font-size: 0.7rem;
+  padding: 0.2rem 0.55rem;
   border-radius: 999px;
-  border: 1px solid #404040;
-  color: #a3a3a3;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
-.app__upload {
+.app__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
   margin-left: auto;
-  font-size: 0.85rem;
-  cursor: pointer;
-  padding: 0.3rem 0.7rem;
-  border: 1px solid #404040;
-  border-radius: 6px;
-  color: #e5e5e5;
-}
-
-.app__upload:hover {
-  border-color: #737373;
-}
-
-.app__upload input {
-  display: none;
 }
 
 .app__status {
   font-size: 0.75rem;
-  color: #a3a3a3;
+  color: var(--muted);
+  white-space: nowrap;
 }
 
-.app__downloads {
+/* ---------- controls ---------- */
+
+.app__field {
   display: flex;
-  gap: 0.4rem;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.8rem;
+  color: var(--muted);
 }
 
-.app__downloads button {
+.app__field select {
   font: inherit;
-  font-size: 0.85rem;
+  font-size: 0.8rem;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.4rem 0.6rem;
   cursor: pointer;
-  padding: 0.3rem 0.7rem;
-  border: 1px solid #404040;
+}
+
+.app__field select:hover:not(:disabled) {
+  border-color: var(--border-hover);
+}
+
+.app__field select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.app__button {
+  font: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+  padding: 0.4rem 0.75rem;
+  border: 1px solid var(--border);
   border-radius: 6px;
   background: transparent;
-  color: #e5e5e5;
+  color: var(--text);
+  line-height: 1.2;
 }
 
-.app__downloads button:hover {
-  border-color: #737373;
+.app__button:hover {
+  border-color: var(--border-hover);
 }
 
-.app__canvas-wrap {
-  flex: 1;
+.app__button--primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
+.app__button--primary:hover {
+  filter: brightness(1.08);
+  border-color: var(--accent);
+}
+
+.app__button input[type='file'] {
+  display: none;
+}
+
+.app__button-group {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.app__button-group button {
+  font: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+  padding: 0.4rem 0.7rem;
+  border: none;
+  border-right: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+}
+
+.app__button-group button:last-child {
+  border-right: none;
+}
+
+.app__button-group button:hover {
+  background: var(--border);
+}
+
+/* ---------- stage ---------- */
+
+.app__stage {
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 1.5rem;
 }
 
 canvas {
@@ -95,6 +188,23 @@ canvas {
    * common case is the browser downscaling it — nearest-neighbor downscaling drops
    * whole rows/columns of glyphs rather than blending them, which reads as moiré/noise.
    * Smooth (browser default) scaling handles both directions reasonably. */
+  display: block;
+  /* Flex items default to min-width/min-height:auto, which silently overrides
+   * max-width/max-height and blocks shrinking below the canvas's own resolution —
+   * this is what let the canvas overflow its container instead of scaling down. */
+  min-width: 0;
+  min-height: 0;
   max-width: 100%;
   max-height: 100%;
+  width: auto;
+  height: auto;
+  border-radius: 4px;
+  box-shadow: 0 0 0 1px var(--border);
+}
+
+@media (max-width: 640px) {
+  .app__toolbar {
+    width: 100%;
+    margin-left: 0;
+  }
 }
