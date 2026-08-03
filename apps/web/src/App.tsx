@@ -18,6 +18,10 @@ import {
   fieldToText,
   fieldToAnsi,
   getCharset,
+  WEIGHTS_PHOTOGRAPHIC,
+  WEIGHTS_TECHNICAL,
+  WEIGHTS_DRAMATIC,
+  WEIGHTS_CLASSIC,
   type MatchWeights,
   type PreparedGlyph,
   type Oklab,
@@ -47,13 +51,22 @@ const FONT_FAMILY = 'ui-monospace, "JetBrains Mono", "IBM Plex Mono", monospace'
 const CHARSET_ID = 'ascii-full'
 
 /**
- * Balanced for photographic clarity: tone dominant (so brightness reads correctly),
- * structure meaningful but not overriding (kicks in on real edges/texture — flat
- * regions no longer engage it at all, see tileConfidence in packages/core/match/cost.ts).
- * Used as the fallback path when a cell's dual-cell separation is too low (PLAN §4.4
- * degenerate case).
+ * Style presets — user-selectable rather than a single hardcoded guess. Applied to the
+ * single-tone fallback path (PLAN §4.4 degenerate case; the dual-cell path always
+ * matches structure-first since it's matching an actual binary shape, not a photo).
  */
-const IMAGE_WEIGHTS: MatchWeights = { wStruct: 0.45, wTone: 1.0, wEdge: 0, wTemp: 0, wPrior: 0 }
+interface StylePreset {
+  id: string
+  label: string
+  weights: MatchWeights
+}
+const STYLE_PRESETS: StylePreset[] = [
+  { id: 'balanced', label: 'Balanced', weights: { wStruct: 0.45, wTone: 1.0, wEdge: 0, wTemp: 0, wPrior: 0 } },
+  { id: 'photographic', label: 'Photographic', weights: WEIGHTS_PHOTOGRAPHIC },
+  { id: 'technical', label: 'Technical', weights: WEIGHTS_TECHNICAL },
+  { id: 'dramatic', label: 'Dramatic', weights: WEIGHTS_DRAMATIC },
+  { id: 'classic', label: 'Classic', weights: WEIGHTS_CLASSIC },
+]
 
 /** The dual-cell mask is a clean binary shape (PLAN §4.4) — match it structure-first. */
 const DUAL_CELL_WEIGHTS: MatchWeights = { wStruct: 1.0, wTone: 0.3, wEdge: 0, wTemp: 0, wPrior: 0 }
@@ -141,6 +154,7 @@ function imageToGlyphField(
   img: HTMLImageElement,
   prepared: readonly PreparedGlyph[],
   directionIndex: Record<Direction, number>,
+  weights: MatchWeights,
 ): GlyphField {
   const cols = COLS
   const cellAspect = CELL_W / CELL_H
@@ -248,9 +262,17 @@ function imageToGlyphField(
         fg = packLinearRgb(oklabToLinear(dual.c1))
         bg = packLinearRgb(oklabToLinear(dual.c0))
       } else {
-        chIndex = matchGlyphFast(tile, prepared, IMAGE_WEIGHTS).index
-        fg = packLinearRgb({ r: sumR / cellPixels, g: sumG / cellPixels, b: sumB / cellPixels })
-        bg = packRgba8(0, 0, 0)
+        // A flat cell's color IS its color — hardcoding bg to black here was discarding
+        // it entirely, which is why solid-color regions (flat-design illustrations,
+        // logos, large sky/wall areas) rendered mostly black with only faint tinted
+        // glyph strokes instead of the actual color. Both fg/bg now anchor to the cell's
+        // true average color, with a small symmetric lightness offset so the glyph shape
+        // stays visible as a subtle emboss rather than vanishing (fg==bg).
+        chIndex = matchGlyphFast(tile, prepared, weights).index
+        const avgOklab = linearToOklab({ r: sumR / cellPixels, g: sumG / cellPixels, b: sumB / cellPixels })
+        const SHADE = 0.07
+        fg = packLinearRgb(oklabToLinear({ L: clamp01(avgOklab.L + SHADE), a: avgOklab.a, b: avgOklab.b }))
+        bg = packLinearRgb(oklabToLinear({ L: clamp01(avgOklab.L - SHADE), a: avgOklab.a, b: avgOklab.b }))
       }
 
       const cellEdge = computeCellEdge(grad, cx, cy, CELL_W, CELL_H)
@@ -272,9 +294,11 @@ export function App(): ReactElement {
   const directionIndexRef = useRef<Record<Direction, number> | null>(null)
   const fieldRef = useRef<GlyphField | null>(null)
   const modeRef = useRef<'plasma' | 'image'>('plasma')
+  const loadedImageRef = useRef<HTMLImageElement | null>(null)
   const [tier, setTier] = useState<CapabilityTier | null>(null)
   const [status, setStatus] = useState<string>('')
   const [hasImage, setHasImage] = useState(false)
+  const [presetId, setPresetId] = useState(STYLE_PRESETS[0]!.id)
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -341,9 +365,7 @@ export function App(): ReactElement {
     }
   }, [])
 
-  function handleFile(e: ChangeEvent<HTMLInputElement>): void {
-    const file = e.target.files?.[0]
-    if (!file) return
+  function runConversion(img: HTMLImageElement, weights: MatchWeights): void {
     const canvas = canvasRef.current
     const renderer = rendererRef.current
     const prepared = preparedRef.current
@@ -351,10 +373,10 @@ export function App(): ReactElement {
     if (!canvas || !renderer || !prepared || !directionIndex) return
 
     setStatus('Converting…')
-    const img = new Image()
-    img.onload = () => {
+    // rAF so the "Converting…" status actually paints before the (synchronous, ~1-3s) conversion blocks the thread.
+    requestAnimationFrame(() => {
       const t0 = performance.now()
-      const field = imageToGlyphField(img, prepared, directionIndex)
+      const field = imageToGlyphField(img, prepared, directionIndex, weights)
       const ms = (performance.now() - t0).toFixed(0)
       fieldRef.current = field
       modeRef.current = 'image'
@@ -365,9 +387,29 @@ export function App(): ReactElement {
       renderer.draw(canvas.width, canvas.height)
       setStatus(`${field.cols}x${field.rows} glyphs in ${ms}ms`)
       setHasImage(true)
+    })
+  }
+
+  function handleFile(e: ChangeEvent<HTMLInputElement>): void {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const img = new Image()
+    img.onload = () => {
+      loadedImageRef.current = img
+      const weights = STYLE_PRESETS.find((p) => p.id === presetId)?.weights ?? STYLE_PRESETS[0]!.weights
+      runConversion(img, weights)
       URL.revokeObjectURL(img.src)
     }
     img.src = URL.createObjectURL(file)
+  }
+
+  function handlePresetChange(e: ChangeEvent<HTMLSelectElement>): void {
+    const id = e.target.value
+    setPresetId(id)
+    const img = loadedImageRef.current
+    if (!img) return
+    const weights = STYLE_PRESETS.find((p) => p.id === id)?.weights ?? STYLE_PRESETS[0]!.weights
+    runConversion(img, weights)
   }
 
   function downloadPng(): void {
@@ -406,24 +448,43 @@ export function App(): ReactElement {
   return (
     <div className="app">
       <header className="app__header">
-        <span className="app__title">GLYPHFORGE</span>
-        <span className="app__tier">tier: {tier ?? 'detecting…'}</span>
-        <label className="app__upload">
-          Upload image
-          <input type="file" accept="image/*" onChange={handleFile} />
-        </label>
-        {hasImage && (
-          <div className="app__downloads">
-            <button onClick={downloadPng}>PNG</button>
-            <button onClick={downloadText}>TXT</button>
-            <button onClick={downloadAnsi}>ANSI</button>
-          </div>
-        )}
+        <div className="app__brand">
+          <span className="app__title">GLYPHFORGE</span>
+          <span className="app__tier">{tier ?? 'detecting…'}</span>
+        </div>
+
+        <div className="app__toolbar">
+          <label className="app__field">
+            <span className="app__field-label">Style</span>
+            <select value={presetId} onChange={handlePresetChange} disabled={!hasImage}>
+              {STYLE_PRESETS.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="app__button app__button--primary">
+            Upload image
+            <input type="file" accept="image/*" onChange={handleFile} />
+          </label>
+
+          {hasImage && (
+            <div className="app__button-group" role="group" aria-label="Download">
+              <button onClick={downloadPng}>PNG</button>
+              <button onClick={downloadText}>TXT</button>
+              <button onClick={downloadAnsi}>ANSI</button>
+            </div>
+          )}
+        </div>
+
         {status && <span className="app__status">{status}</span>}
       </header>
-      <div className="app__canvas-wrap">
+
+      <main className="app__stage">
         <canvas ref={canvasRef} />
-      </div>
+      </main>
     </div>
   )
 }
