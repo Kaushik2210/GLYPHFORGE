@@ -47,9 +47,12 @@ const CELL_H = 14
 const COLS = 220
 // The idle plasma demo used to share COLS with real conversions, so its canvas was
 // exactly as oversized (1760px+) — no image loaded yet, but already needing scroll.
-// Kept small since it's decorative, not something a user needs to see at full detail.
-const PLASMA_COLS = 48
-const PLASMA_ROWS = 22
+// Sized from the actual viewport at mount (see fitPlasmaCols below) rather than a
+// fixed constant — a hardcoded value tuned against one screen size just overflows
+// on a narrower one (phones range ~360-430px; a dev pane isn't representative).
+const PLASMA_ASPECT = 22 / 48 // rows per column, matches the demo's original look
+const PLASMA_COLS_MIN = 24
+const PLASMA_COLS_MAX = 80
 const FONT_FAMILY = 'ui-monospace, "JetBrains Mono", "IBM Plex Mono", monospace'
 // ascii-full (95 glyphs) rather than ascii-safe: more shapes to match against, and it
 // already contains the four directional glyphs the edge pass overrides onto (- | / \).
@@ -115,6 +118,12 @@ function paintPlasma(field: GlyphField, tSeconds: number): void {
 
 function clamp01(v: number): number {
   return v < 0 ? 0 : v > 1 ? 1 : v
+}
+
+/** Picks a plasma-demo column count that fills (not overflows) the given container width. */
+function fitPlasmaCols(containerWidthPx: number): number {
+  const cols = Math.floor(containerWidthPx / CELL_W)
+  return Math.max(PLASMA_COLS_MIN, Math.min(PLASMA_COLS_MAX, cols))
 }
 
 /** Linear-light luminance (Rec.709) — invariant #1: never weight raw sRGB channels. */
@@ -313,10 +322,22 @@ export function App(): ReactElement {
     const detected = detectCapabilityTier(env)
     setTier(detected)
 
-    canvas.width = PLASMA_COLS * CELL_W
-    canvas.height = PLASMA_ROWS * CELL_H
+    // Size the demo to the actual available width so it fills without overflowing —
+    // a fixed constant tuned against one screen just overflows a narrower one.
+    const stage = canvas.parentElement
+    let availableW = 640
+    if (stage) {
+      const stageStyle = window.getComputedStyle(stage)
+      const paddingX = parseFloat(stageStyle.paddingLeft || '0') + parseFloat(stageStyle.paddingRight || '0')
+      availableW = stage.clientWidth - paddingX
+    }
+    const plasmaCols = fitPlasmaCols(availableW)
+    const plasmaRows = Math.max(10, Math.round(plasmaCols * PLASMA_ASPECT))
 
-    fieldRef.current = new GlyphField(PLASMA_COLS, PLASMA_ROWS)
+    canvas.width = plasmaCols * CELL_W
+    canvas.height = plasmaRows * CELL_H
+
+    fieldRef.current = new GlyphField(plasmaCols, plasmaRows)
     let rafId: number
 
     if (detected !== 'webgl2' && detected !== 'webgpu') {
