@@ -10,6 +10,13 @@
   --muted: #93939c;
   --accent: #5b8cff;
   --accent-text: #0a0a0a;
+
+  /* Baseline is mobile: comfortable ~44px tap targets (Apple/Material guidance).
+   * The >=768px breakpoint below tightens these for mouse-driven layouts. */
+  --control-pad-y: 0.65rem;
+  --control-pad-x: 0.9rem;
+  --control-font: 0.85rem;
+  --header-pad-x: 1rem;
 }
 
 *,
@@ -27,6 +34,10 @@ body,
   color: var(--text);
 }
 
+body {
+  overscroll-behavior: none;
+}
+
 .app {
   display: grid;
   grid-template-rows: auto 1fr;
@@ -40,8 +51,11 @@ body,
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.75rem 1.25rem;
-  padding: 0.75rem 1.25rem;
+  gap: 0.75rem 1rem;
+  padding: 0.75rem var(--header-pad-x);
+  padding-top: max(0.75rem, env(safe-area-inset-top));
+  padding-left: max(var(--header-pad-x), env(safe-area-inset-left));
+  padding-right: max(var(--header-pad-x), env(safe-area-inset-right));
   border-bottom: 1px solid var(--border);
   background: var(--surface);
 }
@@ -80,27 +94,31 @@ body,
   font-size: 0.75rem;
   color: var(--muted);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* ---------- controls ---------- */
+/* Shared control sizing so select/buttons align on a common height/baseline. */
 
 .app__field {
   display: flex;
   align-items: center;
   gap: 0.45rem;
-  font-size: 0.8rem;
+  font-size: var(--control-font);
   color: var(--muted);
 }
 
 .app__field select {
   font: inherit;
-  font-size: 0.8rem;
+  font-size: var(--control-font);
   color: var(--text);
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 0.4rem 0.6rem;
+  border-radius: 8px;
+  padding: var(--control-pad-y) var(--control-pad-x);
   cursor: pointer;
+  min-height: 44px;
 }
 
 .app__field select:hover:not(:disabled) {
@@ -113,15 +131,20 @@ body,
 }
 
 .app__button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   font: inherit;
-  font-size: 0.8rem;
+  font-size: var(--control-font);
   cursor: pointer;
-  padding: 0.4rem 0.75rem;
+  padding: var(--control-pad-y) var(--control-pad-x);
+  min-height: 44px;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 8px;
   background: transparent;
   color: var(--text);
   line-height: 1.2;
+  white-space: nowrap;
 }
 
 .app__button:hover {
@@ -141,21 +164,31 @@ body,
 }
 
 .app__button input[type='file'] {
-  display: none;
+  /* Visually hidden but still focusable/tappable via the <label>, not display:none
+   * (which removes it from the accessibility tree and breaks keyboard activation). */
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
 }
 
 .app__button-group {
   display: flex;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 8px;
   overflow: hidden;
 }
 
 .app__button-group button {
   font: inherit;
-  font-size: 0.8rem;
+  font-size: var(--control-font);
   cursor: pointer;
-  padding: 0.4rem 0.7rem;
+  padding: var(--control-pad-y) var(--control-pad-x);
+  min-height: 44px;
   border: none;
   border-right: 1px solid var(--border);
   background: transparent;
@@ -179,7 +212,8 @@ body,
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 1.5rem;
+  padding: 1rem;
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
 }
 
 canvas {
@@ -202,9 +236,62 @@ canvas {
   box-shadow: 0 0 0 1px var(--border);
 }
 
-@media (max-width: 640px) {
+/* ---------- breakpoints ---------- */
+
+/* Small phones: stack brand and toolbar into their own rows instead of wrapping
+ * mid-toolbar, and let the toolbar's controls each take equal width so nothing
+ * is squeezed illegibly narrow. */
+@media (max-width: 480px) {
+  .app__header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .app__brand {
+    justify-content: space-between;
+  }
+
   .app__toolbar {
-    width: 100%;
     margin-left: 0;
+  }
+
+  .app__field {
+    flex: 1 1 auto;
+  }
+
+  .app__field select {
+    flex: 1;
+  }
+
+  .app__button-group {
+    width: 100%;
+  }
+
+  .app__button-group button {
+    flex: 1;
+  }
+
+  .app__status {
+    order: 1;
+    width: 100%;
+  }
+}
+
+/* Tablet and up: tighten control density back down for mouse/trackpad use. */
+@media (min-width: 768px) {
+  :root {
+    --control-pad-y: 0.4rem;
+    --control-pad-x: 0.75rem;
+    --control-font: 0.8rem;
+  }
+
+  .app__field select,
+  .app__button,
+  .app__button-group button {
+    min-height: 34px;
+  }
+
+  .app__stage {
+    padding: 1.5rem;
   }
 }
