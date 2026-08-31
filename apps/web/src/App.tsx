@@ -148,6 +148,31 @@ function fitConversionCols(availW: number, availH: number, imgAspect: number): n
   return Math.max(CONVERSION_COLS_MIN, Math.min(CONVERSION_COLS_MAX, cols))
 }
 
+// Capped rather than using the full devicePixelRatio: a common phone at 3x DPR would
+// otherwise render 9x the pixels of a 1x display for the same visual size (GPU fill-
+// rate and memory scale with the square of the ratio). 2x already reads as fully crisp
+// at normal viewing distance for text this size — the gap between 2x and 3x is not
+// perceptible the way 1x-vs-2x obviously is.
+const MAX_DEVICE_PIXEL_RATIO = 2
+
+/**
+ * Sets a canvas's backing-store resolution to its CSS display size scaled by the
+ * device pixel ratio, while pinning the CSS size to what it would otherwise default
+ * to. Without this, the backing store matches the CSS size 1:1 and the browser has to
+ * upscale it to fill the screen's actual physical pixels on any high-DPI display —
+ * effectively every modern phone — which reintroduces blur through a different
+ * mechanism than the fixed-resolution-vs-viewport mismatch fixed earlier: that fix
+ * made the *logical* grid fit the *logical* viewport, but said nothing about how many
+ * *physical* pixels back each logical one, which is what a phone's 2-3x DPR governs.
+ */
+function sizeCanvasForDisplay(canvas: HTMLCanvasElement, cssW: number, cssH: number): void {
+  const dpr = Math.min(window.devicePixelRatio || 1, MAX_DEVICE_PIXEL_RATIO)
+  canvas.width = Math.round(cssW * dpr)
+  canvas.height = Math.round(cssH * dpr)
+  canvas.style.width = `${cssW}px`
+  canvas.style.height = `${cssH}px`
+}
+
 /**
  * The available content box of `.app__stage`, padding excluded. Must be read from the
  * stage element itself, not from `canvas.parentElement` — the canvas's wrapper divs
@@ -373,8 +398,7 @@ export function App(): ReactElement {
     const plasmaCols = fitPlasmaCols(availableW)
     const plasmaRows = Math.max(10, Math.round(plasmaCols * PLASMA_ASPECT))
 
-    canvas.width = plasmaCols * CELL_W
-    canvas.height = plasmaRows * CELL_H
+    sizeCanvasForDisplay(canvas, plasmaCols * CELL_W, plasmaRows * CELL_H)
 
     fieldRef.current = new GlyphField(plasmaCols, plasmaRows)
     // 0 is never a real requestAnimationFrame id, so cancelAnimationFrame(0) in cleanup
@@ -464,8 +488,7 @@ export function App(): ReactElement {
       const ms = (performance.now() - t0).toFixed(0)
       fieldRef.current = field
       modeRef.current = 'image'
-      canvas.width = field.cols * CELL_W
-      canvas.height = field.rows * CELL_H
+      sizeCanvasForDisplay(canvas, field.cols * CELL_W, field.rows * CELL_H)
       renderer.resize(field.cols, field.rows)
       renderer.upload(field)
       // Reveal fade: set transparent, draw, then let the next frame's opacity change
@@ -481,7 +504,13 @@ export function App(): ReactElement {
 
       const stage = stageRef.current
       if (stage) {
-        setShowScrollHint(canvas.width > stage.clientWidth || canvas.height > stage.clientHeight)
+        // Compare CSS display size, not the (now DPR-scaled) backing-store size in
+        // canvas.width/height — those are no longer the same thing as of
+        // sizeCanvasForDisplay above, and comparing the backing store against the
+        // stage's CSS-pixel clientWidth would over-report overflow on any high-DPI
+        // screen even when the visible size actually fits fine.
+        const { width: availW, height: availH } = getStageAvailableSize(stage)
+        setShowScrollHint(field.cols * CELL_W > availW || field.rows * CELL_H > availH)
       }
     }, 0)
   }
