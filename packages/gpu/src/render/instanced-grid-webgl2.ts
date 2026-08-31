@@ -9,7 +9,9 @@ import type { GlyphField } from '@glyphforge/core'
  */
 export interface InstancedGridRenderer {
   resize(cols: number, rows: number): void
-  setAtlas(texture: WebGLTexture, glyphCount: number): void
+  /** `cellW` is the atlas's per-glyph cell width in texels — used to inset UV sampling
+   * by half a texel so LINEAR filtering can't bleed into the neighboring glyph. */
+  setAtlas(texture: WebGLTexture, glyphCount: number, cellW: number): void
   upload(field: GlyphField): void
   draw(viewportW: number, viewportH: number): void
   dispose(): void
@@ -40,16 +42,24 @@ void main() {
 `
 
 const FRAGMENT_SRC = `#version 300 es
-precision mediump float;
+// highp, not mediump: mediump is as coarse as ~10 bits of mantissa on some mobile GPUs,
+// which visibly bands fg/bg color mixes across a gradient-heavy image.
+precision highp float;
 in vec4 vBg;
 in vec4 vFg;
 in vec2 vUv;
 in float vCharIndex;
 uniform sampler2D uAtlas;
 uniform float uGlyphCount;
+uniform float uHalfTexelInset;
 out vec4 outColor;
 void main() {
-  vec2 uv = vec2((vCharIndex + vUv.x) / max(uGlyphCount, 1.0), vUv.y);
+  // Each glyph occupies one cellW-texel slice of the atlas strip. LINEAR filtering
+  // samples up to half a texel past the edges of that slice, bleeding in ink from
+  // the adjacent glyph — visible as faint smudges on the left/right edge of every
+  // character. Clamping into the slice by half a texel keeps every sample inside it.
+  float localU = clamp(vUv.x, uHalfTexelInset, 1.0 - uHalfTexelInset);
+  vec2 uv = vec2((vCharIndex + localU) / max(uGlyphCount, 1.0), vUv.y);
   float coverage = texture(uAtlas, uv).r;
   outColor = mix(vBg, vFg, coverage);
 }
@@ -90,6 +100,7 @@ export function createInstancedGridRenderer(gl: WebGL2RenderingContext): Instanc
   const uGridDims = gl.getUniformLocation(program, 'uGridDims')
   const uAtlas = gl.getUniformLocation(program, 'uAtlas')
   const uGlyphCount = gl.getUniformLocation(program, 'uGlyphCount')
+  const uHalfTexelInset = gl.getUniformLocation(program, 'uHalfTexelInset')
 
   const quadBuf = gl.createBuffer()
   gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf)
@@ -135,6 +146,7 @@ export function createInstancedGridRenderer(gl: WebGL2RenderingContext): Instanc
   let instanceCount = 0
   let atlasTexture: WebGLTexture | null = null
   let glyphCount = 1
+  let halfTexelInset = 0
   let charIndexScratch = new Float32Array(0)
 
   function resize(newCols: number, newRows: number): void {
@@ -157,9 +169,10 @@ export function createInstancedGridRenderer(gl: WebGL2RenderingContext): Instanc
   return {
     resize,
 
-    setAtlas(texture: WebGLTexture, count: number) {
+    setAtlas(texture: WebGLTexture, count: number, cellW: number) {
       atlasTexture = texture
       glyphCount = count
+      halfTexelInset = cellW > 0 ? 0.5 / cellW : 0
     },
 
     upload(field: GlyphField) {
@@ -183,6 +196,7 @@ export function createInstancedGridRenderer(gl: WebGL2RenderingContext): Instanc
       gl.useProgram(program)
       gl.uniform2f(uGridDims, Math.max(cols, 1), Math.max(rows, 1))
       gl.uniform1f(uGlyphCount, glyphCount)
+      gl.uniform1f(uHalfTexelInset, halfTexelInset)
       if (atlasTexture) {
         gl.activeTexture(gl.TEXTURE0)
         gl.bindTexture(gl.TEXTURE_2D, atlasTexture)

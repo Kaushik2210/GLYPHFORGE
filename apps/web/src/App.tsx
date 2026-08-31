@@ -344,7 +344,7 @@ export function App(): ReactElement {
     atlasRef.current = atlas
     preparedRef.current = prepareGlyphs(atlas.glyphs)
     directionIndexRef.current = buildDirectionIndex(atlas)
-    renderer.setAtlas(atlas.texture, atlas.glyphs.length)
+    renderer.setAtlas(atlas.texture, atlas.glyphs.length, atlas.cellW)
 
     const start = performance.now()
     const frame = () => {
@@ -373,8 +373,11 @@ export function App(): ReactElement {
     if (!canvas || !renderer || !prepared || !directionIndex) return
 
     setStatus('Converting…')
-    // rAF so the "Converting…" status actually paints before the (synchronous, ~1-3s) conversion blocks the thread.
-    requestAnimationFrame(() => {
+    // setTimeout, not requestAnimationFrame: rAF is fully suspended on a backgrounded
+    // tab, so if the user switches away while this fires the conversion would simply
+    // never run and "Converting…" would hang forever. setTimeout still fires (throttled)
+    // in background tabs, while still yielding a paint for the status text first.
+    setTimeout(() => {
       const t0 = performance.now()
       const field = imageToGlyphField(img, prepared, directionIndex, weights)
       const ms = (performance.now() - t0).toFixed(0)
@@ -387,7 +390,7 @@ export function App(): ReactElement {
       renderer.draw(canvas.width, canvas.height)
       setStatus(`${field.cols}x${field.rows} glyphs in ${ms}ms`)
       setHasImage(true)
-    })
+    }, 0)
   }
 
   function handleFile(e: ChangeEvent<HTMLInputElement>): void {

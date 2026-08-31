@@ -18,8 +18,10 @@ export interface GlyphAtlas {
   stripHeight: number
 }
 
-/** Supersample factor for rasterization — PLAN §3.1: glyph edges hold the detail. */
-const SUPERSAMPLE = 4
+/** Supersample factor for rasterization — PLAN §3.1: glyph edges hold the detail.
+ * 6x rather than the plan's baseline 4x: box-downsampling from a higher-res source
+ * gives noticeably smoother anti-aliased edges at typical cell sizes (8x14). */
+const SUPERSAMPLE = 6
 
 export function rasterizeCharset(
   codepoints: readonly number[],
