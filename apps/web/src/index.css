@@ -2,14 +2,35 @@
   color-scheme: dark;
   font-family: 'JetBrains Mono', 'IBM Plex Mono', ui-monospace, monospace;
 
-  --bg: #0a0a0a;
-  --surface: #111113;
-  --border: #2a2a2e;
-  --border-hover: #45454b;
-  --text: #e8e8ea;
-  --muted: #93939c;
-  --accent: #5b8cff;
-  --accent-text: #0a0a0a;
+  /* ---- color tokens (all pairs checked >=4.5:1, see commit message) ---- */
+  --bg: #09090b;
+  --surface: #0f0f12;
+  --surface-2: #17171b; /* hover surfaces */
+  --border: #232327;
+  --border-strong: #35353b;
+  --text: #f2f2f4;
+  --text-secondary: #a1a1aa;
+  --text-tertiary: #86868d;
+  --accent: #6d8bff;
+  --accent-hover: #85a0ff;
+  --accent-soft: rgb(109 139 255 / 14%);
+  --accent-text: #09090b;
+  --danger: #f87171;
+
+  /* ---- spacing scale (4px rhythm) ---- */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+
+  /* ---- radius / shadow / motion scales ---- */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-full: 999px;
+  --shadow-header: 0 4px 16px -8px rgb(0 0 0 / 55%);
+  --transition: 150ms ease-out;
 
   /* Baseline is mobile: comfortable ~44px tap targets (Apple/Material guidance).
    * The >=768px breakpoint below tightens these for mouse-driven layouts. */
@@ -36,6 +57,7 @@ body,
 
 body {
   overscroll-behavior: none;
+  -webkit-font-smoothing: antialiased;
 }
 
 .app {
@@ -48,54 +70,86 @@ body {
 /* ---------- header ---------- */
 
 .app__header {
+  position: relative;
+  z-index: 10;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.75rem 1rem;
-  padding: 0.75rem var(--header-pad-x);
-  padding-top: max(0.75rem, env(safe-area-inset-top));
+  gap: var(--space-3) var(--space-4);
+  padding: var(--space-3) var(--header-pad-x);
+  padding-top: max(var(--space-3), env(safe-area-inset-top));
   padding-left: max(var(--header-pad-x), env(safe-area-inset-left));
   padding-right: max(var(--header-pad-x), env(safe-area-inset-right));
   border-bottom: 1px solid var(--border);
   background: var(--surface);
+  box-shadow: var(--shadow-header);
 }
 
 .app__brand {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
+  gap: var(--space-2);
 }
 
 .app__title {
   font-weight: 700;
   font-size: 0.95rem;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.1em;
+  background: linear-gradient(135deg, var(--text) 40%, var(--accent-hover));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 
 .app__tier {
   font-size: 0.7rem;
+  font-weight: 600;
   padding: 0.2rem 0.55rem;
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   border: 1px solid var(--border);
-  color: var(--muted);
+  background: var(--surface-2);
+  color: var(--text-tertiary);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
 }
 
 .app__toolbar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.6rem;
+  gap: var(--space-2);
   margin-left: auto;
 }
 
 .app__status {
+  display: inline-flex;
+  align-items: center;
   font-size: 0.75rem;
-  color: var(--muted);
+  color: var(--text-tertiary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.app__status--busy {
+  color: var(--text-secondary);
+}
+
+.app__spinner {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 0.5em;
+  border: 2px solid var(--border-strong);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: app-spin 700ms linear infinite;
+}
+
+@keyframes app-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* ---------- controls ---------- */
@@ -104,51 +158,92 @@ body {
 .app__field {
   display: flex;
   align-items: center;
-  gap: 0.45rem;
+  gap: var(--space-2);
   font-size: var(--control-font);
-  color: var(--muted);
+  color: var(--text-tertiary);
+}
+
+.app__select-wrap {
+  position: relative;
+  display: inline-flex;
+  flex: 1;
 }
 
 .app__field select {
+  appearance: none;
+  -webkit-appearance: none;
   font: inherit;
   font-size: var(--control-font);
   color: var(--text);
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: var(--control-pad-y) var(--control-pad-x);
+  border-radius: var(--radius-sm);
+  padding: var(--control-pad-y) 2rem var(--control-pad-y) var(--control-pad-x);
   cursor: pointer;
   min-height: 44px;
+  width: 100%;
+  transition: border-color var(--transition), background var(--transition);
+}
+
+.app__select-chevron {
+  position: absolute;
+  right: 0.65rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-tertiary);
+  pointer-events: none;
 }
 
 .app__field select:hover:not(:disabled) {
-  border-color: var(--border-hover);
+  border-color: var(--border-strong);
 }
 
 .app__field select:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
   cursor: not-allowed;
+}
+
+.app__field select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .app__button {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
+  gap: 0.45rem;
   font: inherit;
   font-size: var(--control-font);
+  font-weight: 500;
   cursor: pointer;
   padding: var(--control-pad-y) var(--control-pad-x);
   min-height: 44px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text);
   line-height: 1.2;
   white-space: nowrap;
+  transition: border-color var(--transition), background var(--transition), transform 100ms ease-out, filter
+    var(--transition);
 }
 
 .app__button:hover {
-  border-color: var(--border-hover);
+  border-color: var(--border-strong);
+  background: var(--surface-2);
+}
+
+.app__button:active {
+  transform: scale(0.97);
+}
+
+.app__button:focus-within {
+  /* .app__button is a <label> wrapping a visually-hidden <input type=file> (see below) —
+   * focus actually lands on that hidden input, so :focus-visible on the label itself
+   * never matches. Without this, a keyboard user tabbing to "Upload image" would see
+   * only the browser's default ring around an invisible 1px element. */
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .app__button--primary {
@@ -159,8 +254,14 @@ body {
 }
 
 .app__button--primary:hover {
-  filter: brightness(1.08);
-  border-color: var(--accent);
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.app__button--disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  pointer-events: none;
 }
 
 .app__button input[type='file'] {
@@ -179,13 +280,18 @@ body {
 .app__button-group {
   display: flex;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   overflow: hidden;
 }
 
 .app__button-group button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
   font: inherit;
   font-size: var(--control-font);
+  font-weight: 500;
   cursor: pointer;
   padding: var(--control-pad-y) var(--control-pad-x);
   min-height: 44px;
@@ -193,14 +299,35 @@ body {
   border-right: 1px solid var(--border);
   background: transparent;
   color: var(--text);
+  transition: background var(--transition), color var(--transition);
 }
 
 .app__button-group button:last-child {
   border-right: none;
 }
 
-.app__button-group button:hover {
+.app__button-group button:hover:not(:disabled) {
+  background: var(--surface-2);
+}
+
+.app__button-group button:active:not(:disabled) {
   background: var(--border);
+}
+
+.app__button-group button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.app__button-group button:disabled {
+  color: var(--text-tertiary);
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.app__button svg,
+.app__button-group button svg {
+  flex-shrink: 0;
 }
 
 /* ---------- stage ---------- */
@@ -212,20 +339,56 @@ body {
    * crushed real conversions (e.g. 220x223 cells = 1760x3122 native px) down to fit
    * the viewport - individual glyphs end up sub-pixel and the whole thing reads as a
    * smooth blurry photo instead of ASCII art. Scrolling at true 1:1 pixel size keeps
-   * every character legible; `margin: auto` on the canvas still centers it when it's
-   * smaller than the stage, without the "can't scroll to the start" bug that
-   * align-items/justify-content:center has on overflowing flex content. */
+   * every character legible; `margin: auto` on the content wrapper still centers it
+   * when it's smaller than the stage, without the "can't scroll to the start" bug
+   * that align-items/justify-content:center has on overflowing flex content. */
   overflow: auto;
   display: flex;
-  padding: 1rem;
-  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+  padding: var(--space-4);
+  padding-bottom: max(var(--space-4), env(safe-area-inset-bottom));
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+.app__stage::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.app__stage::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.app__stage::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: var(--radius-full);
+  border: 2px solid var(--bg);
+}
+
+.app__stage::-webkit-scrollbar-thumb:hover {
+  background: var(--text-tertiary);
+}
+
+.app__stage-content {
+  margin: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
 }
 
 canvas {
   display: block;
-  margin: auto;
-  border-radius: 4px;
-  box-shadow: 0 0 0 1px var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 0 0 1px var(--border), 0 12px 32px -16px rgb(0 0 0 / 60%);
+}
+
+.app__caption {
+  margin: 0;
+  max-width: 32ch;
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--text-tertiary);
 }
 
 /* ---------- breakpoints ---------- */
@@ -249,10 +412,6 @@ canvas {
 
   .app__field {
     flex: 1 1 auto;
-  }
-
-  .app__field select {
-    flex: 1;
   }
 
   .app__button-group {
@@ -284,6 +443,19 @@ canvas {
   }
 
   .app__stage {
-    padding: 1.5rem;
+    padding: var(--space-5);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .app__spinner {
+    border-top-color: var(--border-strong);
   }
 }

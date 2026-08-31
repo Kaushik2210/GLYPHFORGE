@@ -37,6 +37,7 @@ import {
   type GlyphAtlas,
 } from '@glyphforge/gpu'
 import type { CapabilityTier } from '@glyphforge/gpu'
+import { IconUpload, IconDownload, IconChevronDown } from './icons.js'
 
 const CELL_W = 8
 const CELL_H = 14
@@ -313,6 +314,7 @@ export function App(): ReactElement {
   const [status, setStatus] = useState<string>('')
   const [hasImage, setHasImage] = useState(false)
   const [presetId, setPresetId] = useState(STYLE_PRESETS[0]!.id)
+  const isConverting = status === 'Converting…'
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -338,7 +340,9 @@ export function App(): ReactElement {
     canvas.height = plasmaRows * CELL_H
 
     fieldRef.current = new GlyphField(plasmaCols, plasmaRows)
-    let rafId: number
+    // 0 is never a real requestAnimationFrame id, so cancelAnimationFrame(0) in cleanup
+    // is a safe no-op if the static (reduced-motion) path below never assigns a real one.
+    let rafId = 0
 
     if (detected !== 'webgl2' && detected !== 'webgpu') {
       const ctx = canvas.getContext('2d')
@@ -370,16 +374,26 @@ export function App(): ReactElement {
     directionIndexRef.current = buildDirectionIndex(atlas)
     renderer.setAtlas(atlas.texture, atlas.glyphs.length, atlas.cellW)
 
+    // Respect prefers-reduced-motion: the plasma demo is continuous background motion,
+    // a vestibular trigger for some users — freeze it to a single static frame instead.
+    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
     const start = performance.now()
     const frame = () => {
       const field = fieldRef.current
       if (!field) return
-      if (modeRef.current === 'plasma') {
+      if (modeRef.current === 'plasma' && !prefersReducedMotion) {
         paintPlasma(field, (performance.now() - start) / 1000)
+        renderer.upload(field)
+        renderer.draw(canvas.width, canvas.height)
+        rafId = requestAnimationFrame(frame)
+        return
       }
+      // Static case (reduced motion, or a real image already drawn elsewhere): paint
+      // once and stop — looping forever to redraw an unchanged field wastes battery.
+      if (modeRef.current === 'plasma') paintPlasma(field, 0)
       renderer.upload(field)
       renderer.draw(canvas.width, canvas.height)
-      rafId = requestAnimationFrame(frame)
     }
     frame()
 
@@ -483,34 +497,55 @@ export function App(): ReactElement {
         <div className="app__toolbar">
           <label className="app__field">
             <span className="app__field-label">Style</span>
-            <select value={presetId} onChange={handlePresetChange} disabled={!hasImage}>
-              {STYLE_PRESETS.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.label}
-                </option>
-              ))}
-            </select>
+            <span className="app__select-wrap">
+              <select value={presetId} onChange={handlePresetChange} disabled={!hasImage}>
+                {STYLE_PRESETS.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.label}
+                  </option>
+                ))}
+              </select>
+              <IconChevronDown className="app__select-chevron" />
+            </span>
           </label>
 
-          <label className="app__button app__button--primary">
+          <label className={`app__button app__button--primary${isConverting ? ' app__button--disabled' : ''}`}>
+            <IconUpload />
             Upload image
-            <input type="file" accept="image/*" onChange={handleFile} />
+            <input type="file" accept="image/*" onChange={handleFile} disabled={isConverting} />
           </label>
 
-          {hasImage && (
-            <div className="app__button-group" role="group" aria-label="Download">
-              <button onClick={downloadPng}>PNG</button>
-              <button onClick={downloadText}>TXT</button>
-              <button onClick={downloadAnsi}>ANSI</button>
-            </div>
-          )}
+          <div className="app__button-group" role="group" aria-label="Download">
+            <button onClick={downloadPng} disabled={!hasImage}>
+              <IconDownload />
+              PNG
+            </button>
+            <button onClick={downloadText} disabled={!hasImage}>
+              <IconDownload />
+              TXT
+            </button>
+            <button onClick={downloadAnsi} disabled={!hasImage}>
+              <IconDownload />
+              ANSI
+            </button>
+          </div>
         </div>
 
-        {status && <span className="app__status">{status}</span>}
+        {status && (
+          <span className={`app__status${isConverting ? ' app__status--busy' : ''}`} aria-live="polite">
+            {isConverting && <span className="app__spinner" aria-hidden="true" />}
+            {status}
+          </span>
+        )}
       </header>
 
       <main className="app__stage">
-        <canvas ref={canvasRef} />
+        <div className="app__stage-content">
+          <canvas ref={canvasRef} />
+          {!hasImage && (
+            <p className="app__caption">Live preview — upload a photo to convert it into ASCII art.</p>
+          )}
+        </div>
       </main>
     </div>
   )
