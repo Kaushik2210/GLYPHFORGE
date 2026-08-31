@@ -1,8 +1,11 @@
 :root {
   color-scheme: dark;
-  font-family: 'JetBrains Mono', 'IBM Plex Mono', ui-monospace, monospace;
+  --font-mono: 'JetBrains Mono', 'IBM Plex Mono', ui-monospace, monospace;
+  --font-display: 'Orbitron', var(--font-mono);
+  font-family: var(--font-mono);
 
-  /* ---- color tokens (all pairs checked >=4.5:1, see commit message) ---- */
+  /* ---- color tokens (text/interactive pairs checked >=4.5:1, see commit message —
+   * the extra hues below are decorative-only: background glow/aurora, never text) ---- */
   --bg: #09090b;
   --surface: #0f0f12;
   --surface-2: #17171b; /* hover surfaces */
@@ -16,6 +19,12 @@
   --accent-soft: rgb(109 139 255 / 14%);
   --accent-text: #09090b;
   --danger: #f87171;
+
+  /* Decorative-only aurora hues (never used for text/foreground content). */
+  --aurora-1: #6d8bff;
+  --aurora-2: #b565f3;
+  --aurora-3: #34d9c9;
+  --aurora-4: #ff6ec7;
 
   /* ---- spacing scale (4px rhythm) ---- */
   --space-1: 0.25rem;
@@ -47,8 +56,7 @@
 }
 
 html,
-body,
-#root {
+body {
   margin: 0;
   height: 100%;
   background: var(--bg);
@@ -60,7 +68,65 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+#root {
+  position: relative;
+  /* z-index:0 (not just position:relative) is what actually establishes a stacking
+   * context here — without it the ::before/::after/.app z-index values below would be
+   * compared against ancestors outside #root instead of each other, and layering
+   * wouldn't be guaranteed. */
+  z-index: 0;
+  height: 100%;
+  overflow: hidden; /* clips the oversized aurora layer below */
+  background: var(--bg);
+}
+
+/* Aurora: a slow-drifting, GPU-composited (transform-only, never repainted) glow layer.
+ * Oversized (inset -15%) so the drift never reveals a hard edge. Sits at z-index 0;
+ * .app is given z-index 1 below so the header's opaque surface still fully hides it
+ * there, while the stage's transparent background lets it bleed through subtly. */
+#root::before {
+  content: '';
+  position: absolute;
+  inset: -15%;
+  z-index: 0;
+  pointer-events: none;
+  background: radial-gradient(28% 22% at 20% 25%, color-mix(in srgb, var(--aurora-1) 26%, transparent), transparent 70%),
+    radial-gradient(24% 20% at 80% 20%, color-mix(in srgb, var(--aurora-2) 20%, transparent), transparent 70%),
+    radial-gradient(26% 24% at 75% 80%, color-mix(in srgb, var(--aurora-3) 16%, transparent), transparent 70%),
+    radial-gradient(22% 20% at 15% 80%, color-mix(in srgb, var(--aurora-4) 16%, transparent), transparent 70%);
+  filter: blur(50px);
+  animation: app-aurora-drift 26s ease-in-out infinite;
+  will-change: transform;
+}
+
+@keyframes app-aurora-drift {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  33% {
+    transform: translate3d(2%, -3%, 0) scale(1.06);
+  }
+  66% {
+    transform: translate3d(-2%, 2%, 0) scale(1.04);
+  }
+}
+
+/* Faint scanline texture over everything — cheap (repeating-linear-gradient, static,
+ * no animation) and very low opacity so it reads as "terminal" ambience, not noise. */
+#root::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  background: repeating-linear-gradient(to bottom, rgb(255 255 255 / 2.5%) 0, rgb(255 255 255 / 2.5%) 1px, transparent 1px, transparent 3px);
+  mix-blend-mode: overlay;
+}
+
 .app {
+  position: relative;
+  z-index: 1;
   display: grid;
   grid-template-rows: auto 1fr;
   height: 100dvh;
@@ -92,13 +158,45 @@ body {
 }
 
 .app__title {
+  display: inline-block;
+  font-family: var(--font-display);
   font-weight: 700;
-  font-size: 0.95rem;
-  letter-spacing: 0.1em;
-  background: linear-gradient(135deg, var(--text) 40%, var(--accent-hover));
+  font-size: 1rem;
+  letter-spacing: 0.12em;
+  background: linear-gradient(120deg, var(--text) 15%, var(--aurora-1) 55%, var(--aurora-2) 90%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
+  filter: drop-shadow(0 0 10px color-mix(in srgb, var(--accent) 40%, transparent));
+}
+
+/* A short chromatic-aberration flicker on hover — text-shadow paints independently of
+ * the transparent gradient-clipped fill above, so the RGB-split reads even here. */
+.app__brand:hover .app__title {
+  animation: app-title-glitch 380ms steps(3, jump-none) 1;
+}
+
+@keyframes app-title-glitch {
+  0%,
+  100% {
+    text-shadow: none;
+    transform: translate(0, 0);
+  }
+  20% {
+    text-shadow: 2px 0 var(--aurora-1), -2px 0 var(--aurora-4);
+    transform: translate(1px, 0);
+  }
+  40% {
+    text-shadow: -2px 0 var(--aurora-2), 2px 0 var(--aurora-3);
+    transform: translate(-1px, 0);
+  }
+  60% {
+    text-shadow: 1px 0 var(--aurora-1), -1px 0 var(--aurora-2);
+    transform: translate(1px, 0);
+  }
+  80% {
+    text-shadow: none;
+  }
 }
 
 .app__tier {
@@ -214,6 +312,8 @@ body {
   gap: 0.45rem;
   font: inherit;
   font-size: var(--control-font);
+  position: relative;
+  overflow: hidden;
   font-weight: 500;
   cursor: pointer;
   padding: var(--control-pad-y) var(--control-pad-x);
@@ -225,7 +325,7 @@ body {
   line-height: 1.2;
   white-space: nowrap;
   transition: border-color var(--transition), background var(--transition), transform 100ms ease-out, filter
-    var(--transition);
+    var(--transition), box-shadow var(--transition);
 }
 
 .app__button:hover {
@@ -253,9 +353,28 @@ body {
   font-weight: 600;
 }
 
+.app__button--primary::before {
+  /* Diagonal light sweep on hover. */
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -60%;
+  width: 35%;
+  height: 100%;
+  background: linear-gradient(120deg, transparent, rgb(255 255 255 / 45%), transparent);
+  transform: skewX(-20deg);
+  transition: left 550ms ease-out;
+  pointer-events: none;
+}
+
 .app__button--primary:hover {
   background: var(--accent-hover);
   border-color: var(--accent-hover);
+  box-shadow: 0 0 24px -6px color-mix(in srgb, var(--accent) 70%, transparent);
+}
+
+.app__button--primary:hover::before {
+  left: 130%;
 }
 
 .app__button--disabled {
@@ -333,6 +452,8 @@ body {
 /* ---------- stage ---------- */
 
 .app__stage {
+  position: relative;
+  z-index: 1; /* establishes a stacking context so children's z-index values are scoped here */
   min-height: 0;
   min-width: 0;
   /* Was `hidden` + shrink-the-canvas-to-fit via max-width/max-height. That silently
@@ -343,16 +464,21 @@ body {
    * when it's smaller than the stage, without the "can't scroll to the start" bug
    * that align-items/justify-content:center has on overflowing flex content. */
   overflow: auto;
+  scroll-behavior: smooth;
   display: flex;
   padding: var(--space-4);
   padding-bottom: max(var(--space-4), env(safe-area-inset-bottom));
   scrollbar-width: thin;
   scrollbar-color: var(--border-strong) transparent;
+  /* Faint dot grid so the empty state reads as a considered surface, not a void. */
+  background-image: radial-gradient(var(--border) 1px, transparent 1px);
+  background-size: 28px 28px;
+  background-position: center;
 }
 
 .app__stage::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 11px;
+  height: 11px;
 }
 
 .app__stage::-webkit-scrollbar-track {
@@ -360,35 +486,165 @@ body {
 }
 
 .app__stage::-webkit-scrollbar-thumb {
-  background: var(--border-strong);
+  background: linear-gradient(135deg, var(--aurora-1), var(--aurora-2));
   border-radius: var(--radius-full);
-  border: 2px solid var(--bg);
+  border: 2.5px solid var(--bg);
 }
 
 .app__stage::-webkit-scrollbar-thumb:hover {
-  background: var(--text-tertiary);
+  background: linear-gradient(135deg, var(--aurora-2), var(--aurora-4));
+}
+
+.app__stage-glow {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  /* --mx/--my are updated on mousemove (see App.tsx) so the glow follows the cursor;
+   * they default to a fixed centered spot when unset (touch devices, or before the
+   * first pointer move). Two stacked colors (not one) so it reads as a proper aurora
+   * spotlight rather than a flat tint. */
+  background: radial-gradient(600px circle at var(--mx, 50%) var(--my, 42%), color-mix(in srgb, var(--accent) 22%, transparent) 0%, color-mix(in srgb, var(--aurora-2) 12%, transparent) 40%, transparent 70%);
+  transition: background 60ms linear;
+}
+
+/* Custom cursor: a glowing reticle that trails the real cursor over the stage — it
+ * supplements the native pointer rather than replacing it (never `cursor: none`), so
+ * click precision and OS accessibility cursor settings are untouched. Restricted to
+ * devices with a real mouse/trackpad (a touchscreen has no persistent hover position
+ * to visualize), and only shown once the cursor is actually over the stage so it never
+ * sits at a stale (0,0) position. */
+.app__cursor-dot {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 3;
+  width: 28px;
+  height: 28px;
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(calc(var(--cursor-x, -100px) - 50%), calc(var(--cursor-y, -100px) - 50%));
+  transition: transform 120ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 200ms ease-out;
+  border: 1.5px solid color-mix(in srgb, var(--accent) 70%, transparent);
+  border-radius: 50%;
+  box-shadow: 0 0 14px 2px color-mix(in srgb, var(--accent) 45%, transparent), inset 0 0 8px
+    color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+.app__cursor-dot::after {
+  content: '';
+  position: absolute;
+  inset: 40%;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 6px 1px var(--accent);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .app__stage:hover .app__cursor-dot {
+    opacity: 1;
+  }
+}
+
+.app__scroll-hint {
+  position: absolute;
+  bottom: var(--space-4);
+  right: var(--space-4);
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  padding: 0.4rem 0.75rem;
+  border-radius: var(--radius-full);
+  background: rgb(9 9 11 / 75%);
+  backdrop-filter: blur(6px);
+  border: 1px solid var(--border-strong);
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  font-weight: 500;
+  pointer-events: none;
+  animation: app-scroll-hint-bob 1.6s ease-in-out infinite;
+}
+
+@keyframes app-scroll-hint-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.85;
+  }
+  50% {
+    transform: translateY(4px);
+    opacity: 1;
+  }
 }
 
 .app__stage-content {
+  position: relative;
+  z-index: 1;
   margin: auto;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-5);
+}
+
+.app__hero {
+  max-width: 40ch;
+  text-align: center;
+}
+
+.app__hero-title {
+  margin: 0 0 var(--space-2);
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+
+.app__hero-subtitle {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.6;
+  color: var(--text-tertiary);
+}
+
+.app__canvas-frame {
+  position: relative;
+}
+
+.app__live-badge {
+  position: absolute;
+  top: var(--space-2);
+  left: var(--space-2);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  padding: 0.25rem 0.6rem;
+  border-radius: var(--radius-full);
+  background: rgb(9 9 11 / 65%);
+  backdrop-filter: blur(6px);
+  border: 1px solid var(--border);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.app__live-badge::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 canvas {
   display: block;
   border-radius: var(--radius-sm);
   box-shadow: 0 0 0 1px var(--border), 0 12px 32px -16px rgb(0 0 0 / 60%);
-}
-
-.app__caption {
-  margin: 0;
-  max-width: 32ch;
-  text-align: center;
-  font-size: 0.8rem;
-  color: var(--text-tertiary);
+  transition: opacity 320ms ease-out;
 }
 
 /* ---------- breakpoints ---------- */
@@ -425,6 +681,14 @@ canvas {
   .app__status {
     order: 1;
     width: 100%;
+  }
+
+  .app__hero-title {
+    font-size: 1.25rem;
+  }
+
+  .app__stage-content {
+    gap: var(--space-4);
   }
 }
 
