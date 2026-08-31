@@ -62,7 +62,11 @@ const CONVERSION_COLS_MAX = 240
 // on a narrower one (phones range ~360-430px; a dev pane isn't representative).
 const PLASMA_ASPECT = 22 / 48 // rows per column, matches the demo's original look
 const PLASMA_COLS_MIN = 24
-const PLASMA_COLS_MAX = 80
+// 80 (640px wide) was tuned back when the demo was a small decorative box regardless of
+// screen size. Now that it fills the stage like a real conversion does, that cap left a
+// large dead void next to it on any laptop/desktop screen wider than ~640px - which is
+// most of them. Reuses the same ceiling real conversions use for the same box.
+const PLASMA_COLS_MAX = CONVERSION_COLS_MAX
 const FONT_FAMILY = 'ui-monospace, "JetBrains Mono", "IBM Plex Mono", monospace'
 // ascii-full (95 glyphs) rather than ascii-safe: more shapes to match against, and it
 // already contains the four directional glyphs the edge pass overrides onto (- | / \).
