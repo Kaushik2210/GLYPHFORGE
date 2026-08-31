@@ -45,6 +45,11 @@ const CELL_H = 14
 // DoG/Sobel + per-cell dual-cell/match/edge), a reasonable one-time wait for a clear
 // resolution jump.
 const COLS = 220
+// The idle plasma demo used to share COLS with real conversions, so its canvas was
+// exactly as oversized (1760px+) — no image loaded yet, but already needing scroll.
+// Kept small since it's decorative, not something a user needs to see at full detail.
+const PLASMA_COLS = 48
+const PLASMA_ROWS = 22
 const FONT_FAMILY = 'ui-monospace, "JetBrains Mono", "IBM Plex Mono", monospace'
 // ascii-full (95 glyphs) rather than ascii-safe: more shapes to match against, and it
 // already contains the four directional glyphs the edge pass overrides onto (- | / \).
@@ -308,12 +313,10 @@ export function App(): ReactElement {
     const detected = detectCapabilityTier(env)
     setTier(detected)
 
-    canvas.width = COLS * CELL_W
-    canvas.height = 1 // resized once rows are known; plasma uses a default aspect first
-    const defaultRows = 40
-    canvas.height = defaultRows * CELL_H
+    canvas.width = PLASMA_COLS * CELL_W
+    canvas.height = PLASMA_ROWS * CELL_H
 
-    fieldRef.current = new GlyphField(COLS, defaultRows)
+    fieldRef.current = new GlyphField(PLASMA_COLS, PLASMA_ROWS)
     let rafId: number
 
     if (detected !== 'webgl2' && detected !== 'webgpu') {

@@ -208,30 +208,22 @@ body {
 .app__stage {
   min-height: 0;
   min-width: 0;
-  overflow: hidden;
+  /* Was `hidden` + shrink-the-canvas-to-fit via max-width/max-height. That silently
+   * crushed real conversions (e.g. 220x223 cells = 1760x3122 native px) down to fit
+   * the viewport - individual glyphs end up sub-pixel and the whole thing reads as a
+   * smooth blurry photo instead of ASCII art. Scrolling at true 1:1 pixel size keeps
+   * every character legible; `margin: auto` on the canvas still centers it when it's
+   * smaller than the stage, without the "can't scroll to the start" bug that
+   * align-items/justify-content:center has on overflowing flex content. */
+  overflow: auto;
   display: flex;
-  align-items: center;
-  justify-content: center;
   padding: 1rem;
   padding-bottom: max(1rem, env(safe-area-inset-bottom));
 }
 
 canvas {
-  /* `pixelated` (nearest-neighbor) looks great when the canvas is upscaled, but this
-   * canvas is usually LARGER than the viewport (cols*CELL_W can be 1000px+), so the
-   * common case is the browser downscaling it — nearest-neighbor downscaling drops
-   * whole rows/columns of glyphs rather than blending them, which reads as moiré/noise.
-   * Smooth (browser default) scaling handles both directions reasonably. */
   display: block;
-  /* Flex items default to min-width/min-height:auto, which silently overrides
-   * max-width/max-height and blocks shrinking below the canvas's own resolution —
-   * this is what let the canvas overflow its container instead of scaling down. */
-  min-width: 0;
-  min-height: 0;
-  max-width: 100%;
-  max-height: 100%;
-  width: auto;
-  height: auto;
+  margin: auto;
   border-radius: 4px;
   box-shadow: 0 0 0 1px var(--border);
 }
