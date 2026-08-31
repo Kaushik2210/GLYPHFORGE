@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactElement, type ChangeEvent } from 'react'
+import { useEffect, useRef, useState, type ReactElement, type ChangeEvent, type MouseEvent as ReactMouseEvent } from 'react'
 import {
   GlyphField,
   packRgba8,
@@ -41,11 +41,20 @@ import { IconUpload, IconDownload, IconChevronDown } from './icons.js'
 
 const CELL_W = 8
 const CELL_H = 14
-// 140 read as too low-resolution/blocky to be recognizable. Node-profiled (bypassing
-// browser tab-throttling noise): 220x~125 cells costs ~2.5-3s total (denoise blur +
-// DoG/Sobel + per-cell dual-cell/match/edge), a reasonable one-time wait for a clear
-// resolution jump.
-const COLS = 220
+// Real conversions used to render at a fixed 220 columns regardless of screen size —
+// crisp when the display happened to be wide enough, but on anything smaller the
+// browser had to shrink the (larger) canvas to fit, which is the exact sub-pixel-glyph
+// blur that was fixed earlier. And displaying it at true native size without shrinking
+// meant scrolling to see the whole thing, which read as "overlapping the screen".
+// Fixing both at once: pick the column count that makes the *native* render exactly
+// fill the available space, so there is never any post-hoc scaling in either direction.
+// The floor is deliberately low (not the old fixed-resolution target of 140) - on a
+// phone-width stage, "fits without scrolling" has to win over "at least 140 columns",
+// or every phone conversion would overflow again. 240 is where Node-profiled conversion
+// time (denoise blur + DoG/Sobel + per-cell dual-cell/match/edge) starts costing several
+// seconds, so that's the ceiling on huge monitors.
+const CONVERSION_COLS_MIN = 40
+const CONVERSION_COLS_MAX = 240
 // The idle plasma demo used to share COLS with real conversions, so its canvas was
 // exactly as oversized (1760px+) — no image loaded yet, but already needing scroll.
 // Sized from the actual viewport at mount (see fitPlasmaCols below) rather than a
@@ -127,6 +136,37 @@ function fitPlasmaCols(containerWidthPx: number): number {
   return Math.max(PLASMA_COLS_MIN, Math.min(PLASMA_COLS_MAX, cols))
 }
 
+/**
+ * Picks the column count that makes a native (1:1, unscaled) render of an image with
+ * the given aspect ratio exactly fill the available box — the fix for needing to either
+ * blur-shrink a fixed-resolution render to fit, or scroll a full-resolution one to see it.
+ */
+function fitConversionCols(availW: number, availH: number, imgAspect: number): number {
+  const maxColsByWidth = Math.floor(availW / CELL_W)
+  const maxColsByHeight = Math.floor(availH / (imgAspect * CELL_W))
+  const cols = Math.min(maxColsByWidth, maxColsByHeight)
+  return Math.max(CONVERSION_COLS_MIN, Math.min(CONVERSION_COLS_MAX, cols))
+}
+
+/**
+ * The available content box of `.app__stage`, padding excluded. Must be read from the
+ * stage element itself, not from `canvas.parentElement` — the canvas's wrapper divs
+ * (`.app__canvas-frame`, `.app__stage-content`) are shrink-to-fit flex items with no
+ * explicit width, so their clientWidth just reflects the canvas's *current* size, not
+ * the space actually available. That was a real, previously-shipped bug: the plasma
+ * demo measured its own wrapper and landed near the browser's ~300px canvas default
+ * regardless of viewport, rather than the true stage width.
+ */
+function getStageAvailableSize(stage: HTMLElement): { width: number; height: number } {
+  const style = window.getComputedStyle(stage)
+  const paddingX = parseFloat(style.paddingLeft || '0') + parseFloat(style.paddingRight || '0')
+  const paddingY = parseFloat(style.paddingTop || '0') + parseFloat(style.paddingBottom || '0')
+  return {
+    width: stage.clientWidth - paddingX,
+    height: stage.clientHeight - paddingY,
+  }
+}
+
 /** Linear-light luminance (Rec.709) — invariant #1: never weight raw sRGB channels. */
 function linearLuma(r: number, g: number, b: number): number {
   return 0.2126 * r + 0.7152 * g + 0.0722 * b
@@ -170,8 +210,8 @@ function imageToGlyphField(
   prepared: readonly PreparedGlyph[],
   directionIndex: Record<Direction, number>,
   weights: MatchWeights,
+  cols: number,
 ): GlyphField {
-  const cols = COLS
   const cellAspect = CELL_W / CELL_H
   // Preserve the image's display aspect ratio: rows*CELL_H / cols*CELL_W == imgH/imgW.
   const rows = Math.max(1, Math.round((img.height / img.width) * cols * cellAspect))
@@ -303,6 +343,8 @@ function imageToGlyphField(
 
 export function App(): ReactElement {
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const stageRef = useRef<HTMLElement>(null)
+  const glowRafRef = useRef<number | null>(null)
   const rendererRef = useRef<InstancedGridRenderer | null>(null)
   const atlasRef = useRef<GlyphAtlas | null>(null)
   const preparedRef = useRef<PreparedGlyph[] | null>(null)
@@ -315,6 +357,7 @@ export function App(): ReactElement {
   const [hasImage, setHasImage] = useState(false)
   const [presetId, setPresetId] = useState(STYLE_PRESETS[0]!.id)
   const isConverting = status === 'Converting…'
+  const [showScrollHint, setShowScrollHint] = useState(false)
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -326,13 +369,7 @@ export function App(): ReactElement {
 
     // Size the demo to the actual available width so it fills without overflowing —
     // a fixed constant tuned against one screen just overflows a narrower one.
-    const stage = canvas.parentElement
-    let availableW = 640
-    if (stage) {
-      const stageStyle = window.getComputedStyle(stage)
-      const paddingX = parseFloat(stageStyle.paddingLeft || '0') + parseFloat(stageStyle.paddingRight || '0')
-      availableW = stage.clientWidth - paddingX
-    }
+    const availableW = stageRef.current ? getStageAvailableSize(stageRef.current).width : 640
     const plasmaCols = fitPlasmaCols(availableW)
     const plasmaRows = Math.max(10, Math.round(plasmaCols * PLASMA_ASPECT))
 
@@ -410,6 +447,12 @@ export function App(): ReactElement {
     const directionIndex = directionIndexRef.current
     if (!canvas || !renderer || !prepared || !directionIndex) return
 
+    // Resolve *before* the setTimeout: computed from the stage's current box, so a
+    // browser resize between click and conversion doesn't change the target mid-flight.
+    const stage = stageRef.current
+    const { width: availW, height: availH } = stage ? getStageAvailableSize(stage) : { width: 900, height: 600 }
+    const cols = fitConversionCols(availW, availH, img.height / img.width)
+
     setStatus('Converting…')
     // setTimeout, not requestAnimationFrame: rAF is fully suspended on a backgrounded
     // tab, so if the user switches away while this fires the conversion would simply
@@ -417,7 +460,7 @@ export function App(): ReactElement {
     // in background tabs, while still yielding a paint for the status text first.
     setTimeout(() => {
       const t0 = performance.now()
-      const field = imageToGlyphField(img, prepared, directionIndex, weights)
+      const field = imageToGlyphField(img, prepared, directionIndex, weights, cols)
       const ms = (performance.now() - t0).toFixed(0)
       fieldRef.current = field
       modeRef.current = 'image'
@@ -425,9 +468,21 @@ export function App(): ReactElement {
       canvas.height = field.rows * CELL_H
       renderer.resize(field.cols, field.rows)
       renderer.upload(field)
+      // Reveal fade: set transparent, draw, then let the next frame's opacity change
+      // animate via the canvas's CSS transition — a plain draw() would just pop the
+      // result into view instantly, which reads as a glitch rather than a reveal.
+      canvas.style.opacity = '0'
       renderer.draw(canvas.width, canvas.height)
+      requestAnimationFrame(() => {
+        canvas.style.opacity = '1'
+      })
       setStatus(`${field.cols}x${field.rows} glyphs in ${ms}ms`)
       setHasImage(true)
+
+      const stage = stageRef.current
+      if (stage) {
+        setShowScrollHint(canvas.width > stage.clientWidth || canvas.height > stage.clientHeight)
+      }
     }, 0)
   }
 
@@ -451,6 +506,33 @@ export function App(): ReactElement {
     if (!img) return
     const weights = STYLE_PRESETS.find((p) => p.id === id)?.weights ?? STYLE_PRESETS[0]!.weights
     runConversion(img, weights)
+  }
+
+  function handleStageMouseMove(e: ReactMouseEvent<HTMLElement>): void {
+    // rAF-coalesced: mousemove can fire 100+ times/sec, but the glow only needs to
+    // update once per rendered frame — coalescing avoids piling up redundant style
+    // recalculations behind the (comparatively expensive) blurred-gradient repaint.
+    if (glowRafRef.current !== null) return
+    const clientX = e.clientX
+    const clientY = e.clientY
+    glowRafRef.current = requestAnimationFrame(() => {
+      glowRafRef.current = null
+      const stage = stageRef.current
+      if (!stage) return
+      const rect = stage.getBoundingClientRect()
+      const localX = clientX - rect.left
+      const localY = clientY - rect.top
+      stage.style.setProperty('--mx', `${(localX / rect.width) * 100}%`)
+      stage.style.setProperty('--my', `${(localY / rect.height) * 100}%`)
+      // Drives the custom cursor-dot's position (see .app__cursor-dot) — kept as raw
+      // px, not a percentage, since the dot's own size shouldn't scale with the stage.
+      stage.style.setProperty('--cursor-x', `${localX}px`)
+      stage.style.setProperty('--cursor-y', `${localY}px`)
+    })
+  }
+
+  function handleStageScroll(): void {
+    if (showScrollHint) setShowScrollHint(false)
   }
 
   function downloadPng(): void {
@@ -539,13 +621,30 @@ export function App(): ReactElement {
         )}
       </header>
 
-      <main className="app__stage">
+      <main className="app__stage" ref={stageRef} onMouseMove={handleStageMouseMove} onScroll={handleStageScroll}>
+        <div className="app__stage-glow" aria-hidden="true" />
+        <div className="app__cursor-dot" aria-hidden="true" />
         <div className="app__stage-content">
-          <canvas ref={canvasRef} />
           {!hasImage && (
-            <p className="app__caption">Live preview — upload a photo to convert it into ASCII art.</p>
+            <div className="app__hero">
+              <h1 className="app__hero-title">Turn photos into ASCII art</h1>
+              <p className="app__hero-subtitle">
+                A perceptual glyph matcher, not a brightness ramp — real structure, real color, real
+                detail.
+              </p>
+            </div>
           )}
+          <div className="app__canvas-frame">
+            <canvas ref={canvasRef} />
+            {!hasImage && <span className="app__live-badge">Live preview</span>}
+          </div>
         </div>
+        {showScrollHint && (
+          <span className="app__scroll-hint">
+            <IconChevronDown />
+            Scroll to see the full image
+          </span>
+        )}
       </main>
     </div>
   )
