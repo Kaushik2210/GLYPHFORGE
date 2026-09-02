@@ -608,8 +608,89 @@ body {
   color: var(--text-tertiary);
 }
 
+.app__hero-chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-2);
+  margin: var(--space-4) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app__hero-chips li {
+  padding: 0.3rem 0.7rem;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: 0.7rem;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+
+.app__hero-hint {
+  margin: var(--space-4) 0 0;
+  font-size: 0.72rem;
+  color: var(--text-tertiary);
+}
+
+/* The empty-state stage doubles as a click target (opens the file picker) and a drop
+ * zone — signal both affordances rather than leaving the cursor as the ambiguous
+ * default over what looks like inert decoration. */
+.app__stage--empty {
+  cursor: pointer;
+}
+
+.app__stage--dragging {
+  outline: 2px dashed var(--accent);
+  outline-offset: -2px;
+  background-color: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+
+.app__drop-overlay {
+  position: absolute;
+  inset: var(--space-3);
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--bg) 78%, transparent);
+  backdrop-filter: blur(4px);
+  color: var(--accent-hover);
+  font-size: 0.95rem;
+  font-weight: 600;
+  pointer-events: none;
+}
+
 .app__canvas-frame {
   position: relative;
+}
+
+.app__canvas-frame--busy canvas {
+  opacity: 0.35;
+  filter: blur(1px);
+}
+
+.app__canvas-busy {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.app__canvas-busy-ring {
+  width: 34px;
+  height: 34px;
+  border: 3px solid var(--border-strong);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: app-spin 700ms linear infinite;
 }
 
 .app__live-badge {
@@ -719,7 +800,8 @@ canvas {
     scroll-behavior: auto !important;
   }
 
-  .app__spinner {
+  .app__spinner,
+  .app__canvas-busy-ring {
     border-top-color: var(--border-strong);
   }
 }

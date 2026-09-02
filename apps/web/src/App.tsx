@@ -1,4 +1,12 @@
-import { useEffect, useRef, useState, type ReactElement, type ChangeEvent, type MouseEvent as ReactMouseEvent } from 'react'
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ReactElement,
+  type ChangeEvent,
+  type MouseEvent as ReactMouseEvent,
+  type DragEvent as ReactDragEvent,
+} from 'react'
 import {
   GlyphField,
   packRgba8,
@@ -373,6 +381,7 @@ function imageToGlyphField(
 export function App(): ReactElement {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const stageRef = useRef<HTMLElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const glowRafRef = useRef<number | null>(null)
   const rendererRef = useRef<InstancedGridRenderer | null>(null)
   const atlasRef = useRef<GlyphAtlas | null>(null)
@@ -387,6 +396,11 @@ export function App(): ReactElement {
   const [presetId, setPresetId] = useState(STYLE_PRESETS[0]!.id)
   const isConverting = status === 'Converting…'
   const [showScrollHint, setShowScrollHint] = useState(false)
+  // Tracks drag-over state for the whole stage, not just a sub-region — a converter
+  // tool's most natural gesture is "drop the image anywhere on the preview area",
+  // not hunting for a specific drop target.
+  const [isDragging, setIsDragging] = useState(false)
+  const dragDepthRef = useRef(0)
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -519,9 +533,8 @@ export function App(): ReactElement {
     }, 0)
   }
 
-  function handleFile(e: ChangeEvent<HTMLInputElement>): void {
-    const file = e.target.files?.[0]
-    if (!file) return
+  function loadImageFile(file: File): void {
+    if (!file.type.startsWith('image/')) return
     const img = new Image()
     img.onload = () => {
       loadedImageRef.current = img
@@ -530,6 +543,49 @@ export function App(): ReactElement {
       URL.revokeObjectURL(img.src)
     }
     img.src = URL.createObjectURL(file)
+  }
+
+  function handleFile(e: ChangeEvent<HTMLInputElement>): void {
+    const file = e.target.files?.[0]
+    if (!file) return
+    loadImageFile(file)
+  }
+
+  // dragenter/dragleave fire on every child boundary crossed, not just the stage's own
+  // edge — a naive setIsDragging(false) on dragleave flickers the highlight off while
+  // the pointer is still over a child element. Counting enter/leave depth (rather than
+  // trusting a single boolean) is the standard fix.
+  function handleStageDragEnter(e: ReactDragEvent<HTMLElement>): void {
+    e.preventDefault()
+    dragDepthRef.current += 1
+    if (e.dataTransfer.types.includes('Files')) setIsDragging(true)
+  }
+
+  function handleStageDragOver(e: ReactDragEvent<HTMLElement>): void {
+    // Required even though dragenter already ran — without preventDefault on dragover
+    // too, the browser rejects the drop and falls back to navigating to the file.
+    e.preventDefault()
+  }
+
+  function handleStageDragLeave(e: ReactDragEvent<HTMLElement>): void {
+    e.preventDefault()
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1)
+    if (dragDepthRef.current === 0) setIsDragging(false)
+  }
+
+  function handleStageDrop(e: ReactDragEvent<HTMLElement>): void {
+    e.preventDefault()
+    dragDepthRef.current = 0
+    setIsDragging(false)
+    const file = e.dataTransfer.files[0]
+    if (file) loadImageFile(file)
+  }
+
+  function handleEmptyStageClick(): void {
+    // Only the empty (no-image-yet) state doubles as a click target — once a
+    // conversion exists, clicking the canvas should not immediately reopen the file
+    // picker and discard it.
+    if (!hasImage && !isConverting) fileInputRef.current?.click()
   }
 
   function handlePresetChange(e: ChangeEvent<HTMLSelectElement>): void {
@@ -627,7 +683,7 @@ export function App(): ReactElement {
           <label className={`app__button app__button--primary${isConverting ? ' app__button--disabled' : ''}`}>
             <IconUpload />
             Upload image
-            <input type="file" accept="image/*" onChange={handleFile} disabled={isConverting} />
+            <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFile} disabled={isConverting} />
           </label>
 
           <div className="app__button-group" role="group" aria-label="Download">
@@ -654,7 +710,17 @@ export function App(): ReactElement {
         )}
       </header>
 
-      <main className="app__stage" ref={stageRef} onMouseMove={handleStageMouseMove} onScroll={handleStageScroll}>
+      <main
+        className={`app__stage${isDragging ? ' app__stage--dragging' : ''}${!hasImage ? ' app__stage--empty' : ''}`}
+        ref={stageRef}
+        onMouseMove={handleStageMouseMove}
+        onScroll={handleStageScroll}
+        onDragEnter={handleStageDragEnter}
+        onDragOver={handleStageDragOver}
+        onDragLeave={handleStageDragLeave}
+        onDrop={handleStageDrop}
+        onClick={handleEmptyStageClick}
+      >
         <div className="app__stage-glow" aria-hidden="true" />
         <div className="app__cursor-dot" aria-hidden="true" />
         <div className="app__stage-content">
@@ -665,13 +731,30 @@ export function App(): ReactElement {
                 A perceptual glyph matcher, not a brightness ramp — real structure, real color, real
                 detail.
               </p>
+              <ul className="app__hero-chips" aria-hidden="true">
+                <li>Linear-light color</li>
+                <li>Oklab perceptual match</li>
+                <li>GPU instanced render</li>
+              </ul>
+              <p className="app__hero-hint">Drop an image anywhere here, or click to browse</p>
             </div>
           )}
-          <div className="app__canvas-frame">
+          <div className={`app__canvas-frame${isConverting ? ' app__canvas-frame--busy' : ''}`}>
             <canvas ref={canvasRef} />
             {!hasImage && <span className="app__live-badge">Live preview</span>}
+            {isConverting && (
+              <div className="app__canvas-busy" aria-hidden="true">
+                <span className="app__canvas-busy-ring" />
+              </div>
+            )}
           </div>
         </div>
+        {isDragging && (
+          <div className="app__drop-overlay" aria-hidden="true">
+            <IconUpload size={28} />
+            Drop to convert
+          </div>
+        )}
         {showScrollHint && (
           <span className="app__scroll-hint">
             <IconChevronDown />
