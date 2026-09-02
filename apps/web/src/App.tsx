@@ -160,6 +160,30 @@ function fitConversionCols(availW: number, availH: number, imgAspect: number): n
   return Math.max(CONVERSION_COLS_MIN, Math.min(CONVERSION_COLS_MAX, cols))
 }
 
+// Rows budget for exports — same role CONVERSION_COLS_MAX plays for columns (a ceiling
+// on conversion time), but exports have no viewport to bound rows against the way the
+// live preview does, so a portrait image would otherwise chase CONVERSION_COLS_MAX
+// columns into an unbounded (and unboundedly slow) row count.
+const EXPORT_ROWS_MAX = 200
+
+/**
+ * The on-screen preview is intentionally capped at whatever fits the viewport without
+ * scrolling (fitConversionCols) — that's what fixed the earlier "image overlaps the
+ * screen" bug. But that same cap means any screen narrower than the full detail budget
+ * (basically every screen smaller than ~1920px for a wide image) silently caps fidelity
+ * too, which is what "the image looks bad" turned out to be for image-dense sources
+ * (many small faces/text at once): the preview was never wrong to fit the screen, but
+ * conflating "fits on screen" with "as detailed as the pipeline can produce" cost
+ * fidelity on exactly the images most likely to need every column they can get.
+ * Downloads aren't shown on screen, so they aren't bound by that constraint — this
+ * gives them the full CONVERSION_COLS_MAX ceiling (clamped only by EXPORT_ROWS_MAX for
+ * portrait images), independent of whatever the live preview happened to fit.
+ */
+function computeExportCols(imgAspect: number): number {
+  const unboundedWidth = (CONVERSION_COLS_MAX + 1) * CELL_W
+  return fitConversionCols(unboundedWidth, EXPORT_ROWS_MAX * CELL_H, imgAspect)
+}
+
 // Capped rather than using the full devicePixelRatio: a common phone at 3x DPR would
 // otherwise render 9x the pixels of a 1x display for the same visual size (GPU fill-
 // rate and memory scale with the square of the ratio). 2x already reads as fully crisp
@@ -396,6 +420,7 @@ export function App(): ReactElement {
   const [presetId, setPresetId] = useState(STYLE_PRESETS[0]!.id)
   const isConverting = status === 'Converting…'
   const [showScrollHint, setShowScrollHint] = useState(false)
+  const [isExporting, setIsExporting] = useState(false)
   // Tracks drag-over state for the whole stage, not just a sub-region — a converter
   // tool's most natural gesture is "drop the image anywhere on the preview area",
   // not hunting for a specific drop target.
@@ -624,37 +649,98 @@ export function App(): ReactElement {
     if (showScrollHint) setShowScrollHint(false)
   }
 
+  /**
+   * Re-runs the matcher at export resolution (see computeExportCols) rather than
+   * reusing fieldRef — fieldRef holds whatever the *screen* fit, which on most
+   * screens is well under the pipeline's real detail ceiling.
+   */
+  function buildExportField(): GlyphField | null {
+    const img = loadedImageRef.current
+    const prepared = preparedRef.current
+    const directionIndex = directionIndexRef.current
+    if (!img || !prepared || !directionIndex) return null
+    const weights = STYLE_PRESETS.find((p) => p.id === presetId)?.weights ?? STYLE_PRESETS[0]!.weights
+    const cols = computeExportCols(img.height / img.width)
+    return imageToGlyphField(img, prepared, directionIndex, weights, cols)
+  }
+
   function downloadPng(): void {
     const canvas = canvasRef.current
-    if (!canvas) return
-    canvas.toBlob((blob) => {
-      if (!blob) return
-      const url = URL.createObjectURL(blob)
-      triggerDownload(url, 'glyphforge.png')
-      URL.revokeObjectURL(url)
-    }, 'image/png')
+    const renderer = rendererRef.current
+    if (!canvas || !renderer || isExporting) return
+    setIsExporting(true)
+    // setTimeout, not a direct call: yields a paint first so the disabled/busy button
+    // state is visible before the (synchronous, potentially ~1s) re-match blocks the
+    // main thread — same reasoning as runConversion's use of setTimeout over rAF.
+    setTimeout(() => {
+      const field = buildExportField()
+      const liveField = fieldRef.current
+      if (!field || !liveField) {
+        setIsExporting(false)
+        return
+      }
+      // Render the export-resolution field into the same canvas/renderer used for the
+      // live preview (avoiding a second GL context + glyph atlas for a one-off export),
+      // capture it, then restore the on-screen field. Hidden behind opacity 0 for the
+      // duration so the resolution swap never paints to the screen.
+      const prevW = canvas.width
+      const prevH = canvas.height
+      const prevCssW = canvas.style.width
+      const prevCssH = canvas.style.height
+      const prevOpacity = canvas.style.opacity
+      canvas.style.opacity = '0'
+      sizeCanvasForDisplay(canvas, field.cols * CELL_W, field.rows * CELL_H)
+      renderer.resize(field.cols, field.rows)
+      renderer.upload(field)
+      renderer.draw(canvas.width, canvas.height)
+      canvas.toBlob((blob) => {
+        canvas.width = prevW
+        canvas.height = prevH
+        canvas.style.width = prevCssW
+        canvas.style.height = prevCssH
+        renderer.resize(liveField.cols, liveField.rows)
+        renderer.upload(liveField)
+        renderer.draw(canvas.width, canvas.height)
+        canvas.style.opacity = prevOpacity
+        setIsExporting(false)
+        if (!blob) return
+        const url = URL.createObjectURL(blob)
+        triggerDownload(url, 'glyphforge.png')
+        URL.revokeObjectURL(url)
+      }, 'image/png')
+    }, 0)
   }
 
   function downloadText(): void {
-    const field = fieldRef.current
     const atlas = atlasRef.current
-    if (!field || !atlas) return
-    const codepoints = atlas.glyphs.map((g) => g.codepoint)
-    const blob = new Blob([fieldToText(field, codepoints)], { type: 'text/plain' })
-    const url = URL.createObjectURL(blob)
-    triggerDownload(url, 'glyphforge.txt')
-    URL.revokeObjectURL(url)
+    if (!atlas || isExporting) return
+    setIsExporting(true)
+    setTimeout(() => {
+      const field = buildExportField()
+      setIsExporting(false)
+      if (!field) return
+      const codepoints = atlas.glyphs.map((g) => g.codepoint)
+      const blob = new Blob([fieldToText(field, codepoints)], { type: 'text/plain' })
+      const url = URL.createObjectURL(blob)
+      triggerDownload(url, 'glyphforge.txt')
+      URL.revokeObjectURL(url)
+    }, 0)
   }
 
   function downloadAnsi(): void {
-    const field = fieldRef.current
     const atlas = atlasRef.current
-    if (!field || !atlas) return
-    const codepoints = atlas.glyphs.map((g) => g.codepoint)
-    const blob = new Blob([fieldToAnsi(field, codepoints)], { type: 'text/plain' })
-    const url = URL.createObjectURL(blob)
-    triggerDownload(url, 'glyphforge.ans')
-    URL.revokeObjectURL(url)
+    if (!atlas || isExporting) return
+    setIsExporting(true)
+    setTimeout(() => {
+      const field = buildExportField()
+      setIsExporting(false)
+      if (!field) return
+      const codepoints = atlas.glyphs.map((g) => g.codepoint)
+      const blob = new Blob([fieldToAnsi(field, codepoints)], { type: 'text/plain' })
+      const url = URL.createObjectURL(blob)
+      triggerDownload(url, 'glyphforge.ans')
+      URL.revokeObjectURL(url)
+    }, 0)
   }
 
   return (
@@ -687,25 +773,25 @@ export function App(): ReactElement {
           </label>
 
           <div className="app__button-group" role="group" aria-label="Download">
-            <button onClick={downloadPng} disabled={!hasImage}>
+            <button onClick={downloadPng} disabled={!hasImage || isExporting}>
               <IconDownload />
               PNG
             </button>
-            <button onClick={downloadText} disabled={!hasImage}>
+            <button onClick={downloadText} disabled={!hasImage || isExporting}>
               <IconDownload />
               TXT
             </button>
-            <button onClick={downloadAnsi} disabled={!hasImage}>
+            <button onClick={downloadAnsi} disabled={!hasImage || isExporting}>
               <IconDownload />
               ANSI
             </button>
           </div>
         </div>
 
-        {status && (
-          <span className={`app__status${isConverting ? ' app__status--busy' : ''}`} aria-live="polite">
-            {isConverting && <span className="app__spinner" aria-hidden="true" />}
-            {status}
+        {(status || isExporting) && (
+          <span className={`app__status${isConverting || isExporting ? ' app__status--busy' : ''}`} aria-live="polite">
+            {(isConverting || isExporting) && <span className="app__spinner" aria-hidden="true" />}
+            {isExporting ? 'Rendering export detail…' : status}
           </span>
         )}
       </header>
