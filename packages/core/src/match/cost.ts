@@ -35,10 +35,17 @@ const EPSILON = 1e-6
  * (ΔL~0.03 across a cell) already produced confidence 0.37 at the original 0.025
  * threshold — enough structure weight to flip glyph *shape* between adjacent,
  * similarly-toned rows, which reads as banding/noise even though each row's tone choice
- * is individually correct. Raised so gentle gradients land near confidence 0 (pure tone,
- * a clean visual ramp) while real edges/texture (std well above 0.1) still engage fully.
+ * is individually correct. That measurement predates the caller's denoise blur (App.tsx,
+ * gaussianBlur sigma=2.5) — re-measured against denoised tiles (see
+ * tmp-separation-probe.test.ts in this package's __tests__): a gentle gradient now lands
+ * at confidence ~0.005 and 8x8 ordered-dither noise at 0, both already suppressed by the
+ * blur itself, while a real hard edge still saturates to confidence 1. 0.09 kept a steep
+ * gradient's legitimate structure (confidence ~0.08, i.e. barely engaged) suppressed for
+ * no remaining reason once the blur was doing the actual noise-defeating work — lowered
+ * to keep a comfortable margin above the measured post-denoise noise floor (~6x) while
+ * letting real texture and softer edges engage the structure term again.
  */
-const FLAT_TILE_STD_THRESHOLD = 0.09
+const FLAT_TILE_STD_THRESHOLD = 0.03
 
 function clamp01(v: number): number {
   return v < 0 ? 0 : v > 1 ? 1 : v
