@@ -103,12 +103,17 @@ const DUAL_CELL_WEIGHTS: MatchWeights = { wStruct: 1.0, wTone: 0.3, wEdge: 0, wT
 
 /** Oklab distance between a cell's two color clusters. Below this the cell reads as one
  * flat color (PLAN §4.4 degenerate case) and falls back to single-tone matching.
- * 2-means always finds *some* split, even in a perfectly smooth gradient — measured
- * separation for a gentle photographic gradient runs ~0.01-0.03, a steep one ~0.07-0.15,
- * and a real hard edge ~0.15-0.5+. Too low a threshold (0.06 originally) treats smooth
- * gradient/sensor-noise cells as hard edges, rendering them as speckled noise instead of
- * a clean tone falloff — this is what "the image quality is bad" turned out to be. */
-const DUAL_CELL_SEPARATION_THRESHOLD = 0.18
+ * The 0.06 -> 0.18 hike that fixed the original moire bug was measured *before* the
+ * denoise blur above existed in the pipeline; re-measured after it (see
+ * tmp-separation-probe in packages/core, run against the actual gaussianBlur+
+ * solveDualCell pipeline this file uses): post-denoise, a steep gradient measures
+ * ~0.0065 and 8x8 ordered-dither noise measures 0 - both already killed by the blur
+ * itself. 0.18 was defending against a threat the blur had already neutralized, at the
+ * cost of flattening real (softer/anti-aliased) edges in the 0.05-0.18 range to a
+ * single averaged tone - this is what "photo clarity got worse" turned out to be.
+ * Lowered to keep ~8x margin above the measured noise/gradient ceiling while catching
+ * real edges (measured ~0.234 for a hard step) much closer to their true separation. */
+const DUAL_CELL_SEPARATION_THRESHOLD = 0.05
 
 /** Gaussian sigma (in source pixels) for the DoG edge pass — PLAN §5.1. */
 const EDGE_SIGMA = 1.0
