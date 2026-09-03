@@ -311,10 +311,18 @@ function imageToGlyphField(
     gRaw[p] = srgbToLinear((rgba[idx + 1] ?? 0) / 255)
     bRaw[p] = srgbToLinear((rgba[idx + 2] ?? 0) / 255)
   }
-  // Wide enough to average out an 8x8 ordered-dither (Bayer) tile — browsers commonly
-  // use that block size for gradient dithering, which happens to match CELL_W and was
-  // aliasing into a period-8 repeating pattern per cell before this was widened.
-  const DENOISE_SIGMA = 2.5
+  // This blur feeds BOTH the glyph-shape matcher and the actual displayed fg/bg colors
+  // (rBuf/gBuf/bBuf below) — so it isn't just an anti-moire measure, it directly
+  // determines how much real fine-scale color detail (e.g. a cluster of small faces in
+  // a crowd photo) survives to be shown at all. 2.5 was tuned against the *dual-cell/
+  // flat-tile thresholds of the time* (0.18 / 0.09) — after recalibrating those against
+  // the post-denoise noise floor (see denoise-threshold-calibration.test.ts), a much
+  // smaller sigma still clears the same noise with comfortable margin (measured: 8x8
+  // ordered-dither separation stays ~18x below DUAL_CELL_SEPARATION_THRESHOLD, ~1% white
+  // sensor noise ~39x below), while letting real fine detail that sigma=2.5 was still
+  // flattening (measured separation 0.015, below threshold) cross into dual-cell
+  // treatment (0.052, above it) instead of collapsing to a single averaged tone.
+  const DENOISE_SIGMA = 1.0
   const rBuf = gaussianBlur({ width: srcW, height: srcH, data: rRaw }, DENOISE_SIGMA).data
   const gBuf = gaussianBlur({ width: srcW, height: srcH, data: gRaw }, DENOISE_SIGMA).data
   const bBuf = gaussianBlur({ width: srcW, height: srcH, data: bRaw }, DENOISE_SIGMA).data
