@@ -1,8 +1,16 @@
 {
   "name": "glyphforge",
+  "description": "A GPU-native ASCII art engine for the browser — images converted to character grids via a perceptual glyph matcher, not a brightness ramp.",
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "homepage": "https://glyphforge-web.vercel.app",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Kaushik2210/GLYPHFORGE.git"
+  },
+  "author": "Kaushik",
+  "license": "UNLICENSED",
   "engines": {
     "node": ">=20"
   },
