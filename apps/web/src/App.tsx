@@ -56,12 +56,9 @@ const CELL_H = 14
 // meant scrolling to see the whole thing, which read as "overlapping the screen".
 // Fixing both at once: pick the column count that makes the *native* render exactly
 // fill the available space, so there is never any post-hoc scaling in either direction.
-// The floor is deliberately low (not the old fixed-resolution target of 140) - on a
-// phone-width stage, "fits without scrolling" has to win over "at least 140 columns",
-// or every phone conversion would overflow again. 240 is where Node-profiled conversion
-// time (denoise blur + DoG/Sobel + per-cell dual-cell/match/edge) starts costing several
-// seconds, so that's the ceiling on huge monitors.
-const CONVERSION_COLS_MIN = 40
+// 240 is where Node-profiled conversion time (denoise blur + DoG/Sobel + per-cell
+// dual-cell/match/edge) starts costing several seconds, so that's the ceiling on huge
+// monitors. No corresponding floor — see fitConversionCols below for why.
 const CONVERSION_COLS_MAX = 240
 // The idle plasma demo used to share COLS with real conversions, so its canvas was
 // exactly as oversized (1760px+) — no image loaded yet, but already needing scroll.
@@ -162,7 +159,13 @@ function fitConversionCols(availW: number, availH: number, imgAspect: number): n
   const maxColsByWidth = Math.floor(availW / CELL_W)
   const maxColsByHeight = Math.floor(availH / (imgAspect * CELL_W))
   const cols = Math.min(maxColsByWidth, maxColsByHeight)
-  return Math.max(CONVERSION_COLS_MIN, Math.min(CONVERSION_COLS_MAX, cols))
+  // No resolution floor: fitting the screen always wins over a minimum column count.
+  // A floor here (there used to be one, 40) forces cols back up past whatever fits
+  // whenever the *height* budget is the binding constraint - which a wide screen never
+  // hits, but a portrait photo on a short mobile viewport does. That reintroduced the
+  // exact "image overlaps/scrolls past the screen" bug this function exists to prevent,
+  // just on the vertical axis instead of the horizontal one it was originally fixed for.
+  return Math.max(1, Math.min(CONVERSION_COLS_MAX, cols))
 }
 
 // Rows budget for exports — same role CONVERSION_COLS_MAX plays for columns (a ceiling
@@ -793,12 +796,15 @@ export function App(): ReactElement {
           </div>
         </div>
 
-        {(status || isExporting) && (
-          <span className={`app__status${isConverting || isExporting ? ' app__status--busy' : ''}`} aria-live="polite">
-            {(isConverting || isExporting) && <span className="app__spinner" aria-hidden="true" />}
-            {isExporting ? 'Rendering export detail…' : status}
-          </span>
-        )}
+        {/* Always rendered (never conditional on status/isExporting) so its reserved
+            height — see .app__status's min-height — is present from first mount, not
+            just once there's something to say. A conditionally-rendered row here would
+            grow the header exactly when a conversion finishes, after the stage height
+            it was fit against had already been measured and locked in. */}
+        <span className={`app__status${isConverting || isExporting ? ' app__status--busy' : ''}`} aria-live="polite">
+          {(isConverting || isExporting) && <span className="app__spinner" aria-hidden="true" />}
+          {isExporting ? 'Rendering export detail…' : status}
+        </span>
       </header>
 
       <main

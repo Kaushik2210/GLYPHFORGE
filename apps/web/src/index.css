@@ -222,6 +222,16 @@ body {
 .app__status {
   display: inline-flex;
   align-items: center;
+  /* Reserves its line height even with no text (see the always-rendered span in
+   * App.tsx) - without this, the header measurably grows the moment a status
+   * appears (this row goes from 0 lines to 1 on mobile, where the header stacks
+   * every child on its own row). That growth happens *after* imageToGlyphField
+   * already sized the canvas off the shorter, status-less header's stage height -
+   * so the finished canvas would overflow the now-shorter stage. Reserving the
+   * space up front means the stage's available height is the same before and
+   * after a conversion, so the fit calculation is measuring the box the canvas
+   * will actually have to live in. */
+  min-height: 1.15em;
   font-size: 0.75rem;
   color: var(--text-tertiary);
   white-space: nowrap;
