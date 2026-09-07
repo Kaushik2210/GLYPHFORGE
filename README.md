@@ -6,7 +6,7 @@
 
 **A GPU-native ASCII art engine for the browser.** GLYPHFORGE converts photos into character grids through a perceptual glyph matcher — not the brightness-ramp trick every other converter uses — so the output reads as an actual picture, not scratchy noise. Every pixel decision runs through a real color-science and pattern-matching pipeline: linear-light math, perceptual (Oklab) color clustering, structure-correlated glyph selection, and a GPU-instanced renderer that draws the whole grid in a single draw call.
 
-**[Live demo →](https://glyphforge-web.vercel.app)** · **[Study guide for presenting this project →](https://claude.ai/code/artifact/a17dcaad-fedf-4320-85e1-5f6ed9256b92)**
+**[Live demo →](https://glyphforge-web.vercel.app)**
 
 ## Screenshots
 
