@@ -4,20 +4,41 @@
 ![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)
 ![License](https://img.shields.io/badge/license-all%20rights%20reserved-lightgrey)
 
-**A GPU-native ASCII art engine for the browser.** Images are converted to character grids through a perceptual glyph matcher — not a brightness ramp — preserving real structure, color, and detail.
+**A GPU-native ASCII art engine for the browser.** GLYPHFORGE converts photos into character grids through a perceptual glyph matcher — not the brightness-ramp trick every other converter uses — so the output reads as an actual picture, not scratchy noise. Every pixel decision runs through a real color-science and pattern-matching pipeline: linear-light math, perceptual (Oklab) color clustering, structure-correlated glyph selection, and a GPU-instanced renderer that draws the whole grid in a single draw call.
 
-**[Live demo →](https://glyphforge-web.vercel.app)**
+**[Live demo →](https://glyphforge-web.vercel.app)** · **[Study guide for presenting this project →](https://claude.ai/code/artifact/a17dcaad-fedf-4320-85e1-5f6ed9256b92)**
 
-## What makes this different
+## Screenshots
 
-Most "image to ASCII" tools pick a character by mapping average brightness onto a fixed ramp (`" .:-=+*#%@"`). GLYPHFORGE treats each character cell as what it actually is: a small binary image patch with ~95 possible shapes. Choosing the right one is a nearest-neighbour search in a perceptual feature space, not a lookup table.
+A photo converted end-to-end — smooth gradient sky, a hard-edged silhouette, and fine grass texture, all in the same frame:
 
-- **Structure-aware matching** — normalized cross-correlation on mean-subtracted tile patches picks glyphs by *shape*, not just brightness
-- **Dual-cell color** — each cell can carry two colors (foreground/background) solved via 2-means clustering in Oklab space, so hard edges stay sharp instead of averaging into mud
-- **Linear-light color pipeline** — all image math happens in linear RGB; sRGB conversion only happens at the boundaries
-- **Perceptual color space (Oklab)** — color distance and clustering use Oklab, not naive Euclidean RGB
-- **Edge-aware overrides** — a DoG/Sobel pass detects clean, coherent edges and overrides the matched glyph with a directional character (`- | / \`)
-- **GPU-instanced rendering** — the whole grid renders as a single instanced draw call against a glyph atlas texture, not per-cell canvas/DOM text
+![GLYPHFORGE rendering a sunset photo as colored ASCII art](docs/demo-sunset.png)
+
+Zoomed into the mountain ridge — this is real, selectable text. Each glyph (`I`, `l`, `c`, `z`, `x`, `w`, punctuation) was chosen because its printed shape matches the light/dark pattern of that patch of sky, not because of a brightness lookup:
+
+![Close-up crop showing individual ASCII characters and the hard edge where the mountain silhouette meets the sky](docs/demo-closeup.png)
+
+## Why this is different from other ASCII converters
+
+Nearly every "image to ASCII" tool — the CLI ones, the online ones, the ones bundled into image editors — does the same thing: measure a tile's average brightness, then index into a fixed ramp string like `" .:-=+*#%@"`. It's fast and it's simple, and it's also why their output usually looks like static instead of a picture: **two completely different-looking patches can share the same average brightness**, so a smooth gradient and a scratchy texture render identically.
+
+| | Typical ASCII converter | GLYPHFORGE |
+|---|---|---|
+| **Character selection** | Average brightness → fixed ramp lookup | Cross-correlation against every candidate glyph's actual pixel pattern — shape-aware, not brightness-only |
+| **Color** | One flat color per cell, or none | Two colors per cell (foreground/background), solved by clustering — hard edges stay sharp instead of blurring |
+| **Color math** | Raw sRGB values averaged directly | Linear-light conversion first, then perceptual (Oklab) clustering — matches how brightness and color actually combine and how eyes perceive difference |
+| **Noise handling** | None — sensor grain and gradient dithering get matched as if they were real detail | A calibrated denoise pass, tuned by *measuring* the separation between real noise and real edges rather than guessing |
+| **Resolution** | Usually a fixed column count regardless of screen or image | Computed live from available screen space for the preview, and independently maximized for downloads — never blurred, never needs scrolling |
+| **Rendering** | Draws each character individually (slow past a few thousand cells) | One GPU-instanced draw call for the entire grid, the same technique game engines use for crowds of identical sprites |
+| **Tuning process** | Mostly eyeballed | Every threshold is backed by a written measurement — noise vs. signal separation, fidelity before/after — checked into the test suite as a permanent regression guard |
+
+## Why this matters
+
+**It's a real engineering exercise disguised as a novelty converter.** The moment you commit to matching by *shape* instead of *brightness*, you inherit an entire stack of hard, real problems: color science (RGB isn't how eyes perceive color — Oklab is), signal processing (how do you tell sensor noise from real detail before it corrupts a nearest-neighbour search?), and real-time graphics performance (how do you draw 30,000+ characters without the browser choking?). GLYPHFORGE doesn't stop at "it looks cool" — it treats each of those as a problem to actually solve and verify, not paper over.
+
+**The output is usable, not just a gimmick.** Because character selection is driven by real structure, the result stays legible at a glance instead of degrading into visual noise the way brightness-ramp converters do on anything but the simplest images — so it's viable for actual retro-aesthetic graphics, terminal splash art, or social content, not just a tech demo.
+
+**Every fix is backed by a measurement, not a guess.** When a bug was reported ("this looks blurry," "gradients look noisy"), the response wasn't a visual tweak-and-hope — it was writing a small script to *measure* the actual signal (how much does real noise separate from a real edge, numerically?) and picking a threshold with real margin on both sides, checked into the test suite so it can't silently regress. That discipline is the difference between a demo that happens to look right today and a system that's actually understood.
 
 ## Try it
 
@@ -35,6 +56,7 @@ Most "image to ASCII" tools pick a character by mapping average brightness onto 
 | **State** | Zustand |
 | **Testing** | Vitest |
 | **Package management** | pnpm workspaces (monorepo) |
+| **Deployment** | Vercel (auto-deploys on push to `main`) |
 
 ## Architecture
 
