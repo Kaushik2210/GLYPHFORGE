@@ -78,7 +78,7 @@ Layer boundaries are enforced by `eslint-plugin-boundaries` — `core` never imp
 
 ## Getting started
 
-Requires Node ≥20 and [pnpm](https://pnpm.io).
+Requires Node ≥22.13 and [pnpm](https://pnpm.io).
 
 ```bash
 git clone https://github.com/Kaushik2210/GLYPHFORGE.git
