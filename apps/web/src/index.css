@@ -761,6 +761,15 @@ canvas {
     flex: 1 1 auto;
   }
 
+  /* Without this, the primary Upload button was the one control in the stacked
+   * mobile toolbar that didn't span full width — it sized to its own content
+   * (~150px) and left a dead gap beside it, breaking the otherwise-consistent
+   * full-width rhythm the Style select and download group already had. */
+  .app__button--primary {
+    width: 100%;
+    justify-content: center;
+  }
+
   .app__button-group {
     width: 100%;
   }
